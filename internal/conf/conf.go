@@ -299,6 +299,10 @@ type Conf struct {
 	// Paths
 	OptionalPaths map[string]*OptionalPath `json:"paths"`
 	Paths         map[string]*Path         `json:"-"` // filled by Check()
+
+	// For GPS webrtc
+	GPSWebRTC        bool   `json:"gpswebrtc"`
+	GPSWebRTCAddress string `json:"gpswebrtcAddress"`
 }
 
 func (conf *Conf) setDefaults() {
