@@ -1,4 +1,4 @@
-package main
+package beacon_stream
 
 import (
 	"encoding/json"

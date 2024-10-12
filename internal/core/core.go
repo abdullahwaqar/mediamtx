@@ -5,7 +5,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -625,9 +624,6 @@ func (p *Core) createResources(initial bool) error {
 			return err
 		}
 	}
-
-	// * Mount the beacon server for gps transmission
-	http.HandleFunc("/gps-ws", beacon)
 
 	return nil
 }
