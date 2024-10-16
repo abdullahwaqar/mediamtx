@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 	"github.com/bluenviron/mediamtx/internal/pprof"
 	"github.com/bluenviron/mediamtx/internal/recordcleaner"
 	"github.com/bluenviron/mediamtx/internal/rlimit"
+	"github.com/bluenviron/mediamtx/internal/servers/beacon_stream"
 	"github.com/bluenviron/mediamtx/internal/servers/hls"
 	"github.com/bluenviron/mediamtx/internal/servers/rtmp"
 	"github.com/bluenviron/mediamtx/internal/servers/rtsp"
@@ -624,6 +626,15 @@ func (p *Core) createResources(initial bool) error {
 			return err
 		}
 	}
+
+	// * Start the beacon server for GPS transmission in a separate goroutine
+	go func() {
+		http.HandleFunc("/gps-ws", beacon_stream.HandleBeaconStreamWebSocket)
+		p.Log(logger.Info, "Starting beacon server on :8080")
+		if err := http.ListenAndServe(":8080", nil); err != nil && err != http.ErrServerClosed {
+			p.Log(logger.Error, "Beacon server failed: %v", err)
+		}
+	}()
 
 	return nil
 }

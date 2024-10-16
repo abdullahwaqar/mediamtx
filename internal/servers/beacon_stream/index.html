@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>WebRTC DataChannel Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        #status {
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f0f0f0;
+        }
+
+        #messages {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 300px;
+            overflow-y: scroll;
+            background-color: #fafafa;
+            white-space: pre-wrap;
+        }
+
+        #counts {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #e0e0e0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>WebRTC DataChannel Client</h1>
+    <div id="status">Connecting to signaling server...</div>
+    <div id="messages"></div>
+    <div id="counts">
+        <strong>Messages received in the last second:</strong> <span id="messageCount">0</span><br>
+        <strong>Total messages received:</strong> <span id="totalCount">0</span>
+    </div>
+
+    <script>
+        // Configuration
+        const SIGNALING_SERVER_URL = "ws://localhost:8080/gps-ws";
+
+        // DOM Elements
+        const statusDiv = document.getElementById("status");
+        const messagesDiv = document.getElementById("messages");
+        const messageCountSpan = document.getElementById("messageCount");
+        const totalCountSpan = document.getElementById("totalCount");
+
+        // Variables
+        let pc = null;
+        let dataChannel = null;
+        let remoteDescriptionSet = false;
+        const iceCandidateQueue = [];
+        let messageCount = 0;
+        let totalCount = 0;
+
+        // Utility Functions
+        const logStatus = (message) => {
+            console.log(message);
+            statusDiv.textContent = message;
+        };
+
+        const logMessage = (message) => {
+            console.log(message);
+            messagesDiv.textContent += message + "\n";
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Auto-scroll
+        };
+
+        // Initialize WebSocket Signaling
+        const signalingSocket = new WebSocket(SIGNALING_SERVER_URL);
+
+        signalingSocket.onopen = () => {
+            logStatus("Connected to signaling server.");
+            createPeerConnection();
+            createDataChannel();
+            createAndSendOffer();
+        };
+
+        signalingSocket.onerror = (error) => {
+            logStatus("WebSocket error.");
+            console.error("WebSocket error:", error);
+        };
+
+        signalingSocket.onclose = (event) => {
+            logStatus("WebSocket connection closed.");
+            console.log("WebSocket connection closed:", event.reason);
+        };
+
+        signalingSocket.onmessage = async (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                console.log("Received message from server:", msg);
+
+                if (msg.sdp) {
+                    await handleRemoteSDP(msg.sdp);
+                }
+
+                if (msg.candidate) {
+                    await handleRemoteCandidate(msg.candidate);
+                }
+            } catch (err) {
+                console.error("Error parsing signaling message:", err);
+                logMessage("Error parsing signaling message: " + err);
+            }
+        };
+
+        // Create RTCPeerConnection
+        const createPeerConnection = () => {
+            pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: "stun:stun.l.google.com:19302" }
+                ]
+            });
+
+            // Handle ICE candidates
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    const message = {
+                        candidate: JSON.stringify(event.candidate)
+                    };
+                    signalingSocket.send(JSON.stringify(message));
+                    console.log("Sent ICE candidate:", event.candidate);
+                } else {
+                    console.log("ICE gathering completed.");
+                }
+            };
+
+            // Handle connection state changes
+            pc.oniceconnectionstatechange = () => {
+                console.log(`ICE Connection State: ${pc.iceConnectionState}`);
+                logStatus(`ICE Connection State: ${pc.iceConnectionState}`);
+                if (pc.iceConnectionState === "connected") {
+                    logStatus("Connected!");
+                } else if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+                    logStatus("Connection failed/disconnected.");
+                }
+            };
+
+            // Handle DataChannel messages if receiving channel
+            pc.ondatachannel = (event) => {
+                const receiveChannel = event.channel;
+                receiveChannel.onopen = () => {
+                    console.log("Receive DataChannel is open.");
+                    logStatus("DataChannel is open.");
+                };
+
+                receiveChannel.onmessage = async (event) => {
+                    if (event.data instanceof Blob) {
+                        // Convert Blob to text using arrayBuffer and TextDecoder
+                        const arrayBuffer = await event.data.arrayBuffer();
+                        const textData = new TextDecoder().decode(arrayBuffer);
+
+                        // Log the decoded message
+                        console.log("Received message via DataChannel:", textData);
+                        logMessage("Received: " + textData);
+                        incrementMessageCounts();
+                    } else {
+                        // Handle string data directly
+                        console.log("Received message via DataChannel:", event.data);
+                        logMessage("Received: " + event.data);
+                        incrementMessageCounts();
+                    }
+                };
+
+                receiveChannel.onclose = () => {
+                    console.log("Receive DataChannel is closed.");
+                    logStatus("DataChannel is closed.");
+                };
+            };
+        };
+
+        // Create DataChannel for sending messages
+        const createDataChannel = () => {
+            dataChannel = pc.createDataChannel("gpsData");
+            dataChannel.onopen = () => {
+                console.log("DataChannel is open.");
+                logStatus("DataChannel is open.");
+                // Optionally, send a welcome message
+                // dataChannel.send("Hello Server!");
+            };
+            dataChannel.onmessage = (event) => {
+                console.log("Received message via DataChannel:", event.data);
+                logMessage("Received: " + event.data);
+                incrementMessageCounts();
+            };
+            dataChannel.onclose = () => {
+                console.log("DataChannel is closed.");
+                logStatus("DataChannel is closed.");
+            };
+        };
+
+        // Create and send SDP offer
+        const createAndSendOffer = async () => {
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                logStatus("SDP offer created and set as local description.");
+
+                const message = {
+                    sdp: JSON.stringify(pc.localDescription)
+                };
+                signalingSocket.send(JSON.stringify(message));
+                console.log("Sent SDP offer:", offer);
+            } catch (err) {
+                console.error("Error creating/sending SDP offer:", err);
+                logMessage("Error creating/sending SDP offer: " + err);
+            }
+        };
+
+        // Handle remote SDP answer
+        const handleRemoteSDP = async (sdp) => {
+            try {
+                const remoteDesc = new RTCSessionDescription(JSON.parse(sdp));
+                await pc.setRemoteDescription(remoteDesc);
+                remoteDescriptionSet = true;
+                console.log("Remote description set.");
+                logStatus("Remote description set.");
+
+                // Add any buffered ICE candidates
+                for (const candidate of iceCandidateQueue) {
+                    try {
+                        await pc.addIceCandidate(candidate);
+                        console.log("Added buffered ICE candidate:", candidate);
+                        logMessage("Added buffered ICE candidate: " + JSON.stringify(candidate));
+                    } catch (err) {
+                        console.error("Error adding buffered ICE candidate:", err);
+                        logMessage("Error adding buffered ICE candidate: " + err);
+                    }
+                }
+                iceCandidateQueue.length = 0; // Clear the buffer
+            } catch (err) {
+                console.error("Error setting remote description:", err);
+                logMessage("Error setting remote description: " + err);
+            }
+        };
+
+        // Handle remote ICE candidate
+        const handleRemoteCandidate = async (candidateJSON) => {
+            try {
+                const candidate = new RTCIceCandidate(JSON.parse(candidateJSON));
+                if (remoteDescriptionSet) {
+                    await pc.addIceCandidate(candidate);
+                    console.log("Added ICE candidate:", candidate);
+                    logMessage("Added ICE candidate: " + JSON.stringify(candidate));
+                } else {
+                    // Buffer the candidate
+                    iceCandidateQueue.push(candidate);
+                    console.log("Buffered ICE candidate:", candidate);
+                    logMessage("Buffered ICE candidate: " + JSON.stringify(candidate));
+                }
+            } catch (err) {
+                console.error("Error adding ICE candidate:", err);
+                logMessage("Error adding ICE candidate: " + err);
+            }
+        };
+
+        // Increment message counts
+        const incrementMessageCounts = () => {
+            messageCount++;
+            totalCount++;
+        };
+
+        // Update message counts every second
+        setInterval(() => {
+            messageCountSpan.textContent = `${messageCount}`;
+            totalCountSpan.textContent = `${totalCount}`;
+            messageCount = 0;
+        }, 1000);
+    </script>
+</body>
+
+</html>
