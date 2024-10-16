@@ -187,7 +187,7 @@ func removeDataChannel(dc *webrtc.DataChannel) {
 }
 
 func broadcastGPSData() {
-	// 100 Hz = 100 messages/second
+	// * 100 Hz = 100 messages/second
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 

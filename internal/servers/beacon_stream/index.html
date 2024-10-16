@@ -25,6 +25,13 @@
             background-color: #fafafa;
             white-space: pre-wrap;
         }
+
+        #counts {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #e0e0e0;
+        }
     </style>
 </head>
 
@@ -32,20 +39,28 @@
     <h1>WebRTC DataChannel Client</h1>
     <div id="status">Connecting to signaling server...</div>
     <div id="messages"></div>
+    <div id="counts">
+        <strong>Messages received in the last second:</strong> <span id="messageCount">0</span><br>
+        <strong>Total messages received:</strong> <span id="totalCount">0</span>
+    </div>
 
     <script>
         // Configuration
-        const SIGNALING_SERVER_URL = "ws://localhost:8080/gps-ws"; // Update if different
+        const SIGNALING_SERVER_URL = "ws://localhost:8080/gps-ws";
 
         // DOM Elements
         const statusDiv = document.getElementById("status");
         const messagesDiv = document.getElementById("messages");
+        const messageCountSpan = document.getElementById("messageCount");
+        const totalCountSpan = document.getElementById("totalCount");
 
         // Variables
         let pc = null;
         let dataChannel = null;
         let remoteDescriptionSet = false;
         const iceCandidateQueue = [];
+        let messageCount = 0;
+        let totalCount = 0;
 
         // Utility Functions
         const logStatus = (message) => {
@@ -70,11 +85,13 @@
         };
 
         signalingSocket.onerror = (error) => {
-            logStatus("WebSocket error: " + error);
+            logStatus("WebSocket error.");
+            console.error("WebSocket error:", error);
         };
 
         signalingSocket.onclose = (event) => {
-            logStatus("WebSocket closed: " + event.reason);
+            logStatus("WebSocket connection closed.");
+            console.log("WebSocket connection closed:", event.reason);
         };
 
         signalingSocket.onmessage = async (event) => {
@@ -144,10 +161,12 @@
                         // Log the decoded message
                         console.log("Received message via DataChannel:", textData);
                         logMessage("Received: " + textData);
+                        incrementMessageCounts();
                     } else {
                         // Handle string data directly
                         console.log("Received message via DataChannel:", event.data);
                         logMessage("Received: " + event.data);
+                        incrementMessageCounts();
                     }
                 };
 
@@ -170,6 +189,7 @@
             dataChannel.onmessage = (event) => {
                 console.log("Received message via DataChannel:", event.data);
                 logMessage("Received: " + event.data);
+                incrementMessageCounts();
             };
             dataChannel.onclose = () => {
                 console.log("DataChannel is closed.");
@@ -242,22 +262,18 @@
             }
         };
 
-        // Optionally, send messages via DataChannel
-        // Example: Send a JSON message every 5 seconds
-        /*
+        // Increment message counts
+        const incrementMessageCounts = () => {
+            messageCount++;
+            totalCount++;
+        };
+
+        // Update message counts every second
         setInterval(() => {
-            if (dataChannel && dataChannel.readyState === "open") {
-                const gpsData = {
-                    Timestamp: new Date().toISOString(),
-                    Latitude: 37.7749 + Math.random() * 0.01,  // Example latitude
-                    Longitude: -122.4194 + Math.random() * 0.01  // Example longitude
-                };
-                dataChannel.send(JSON.stringify(gpsData));
-                console.log("Sent GPS data:", gpsData);
-                logMessage("Sent: " + JSON.stringify(gpsData));
-            }
-        }, 5000);
-        */
+            messageCountSpan.textContent = `${messageCount}`;
+            totalCountSpan.textContent = `${totalCount}`;
+            messageCount = 0;
+        }, 1000);
     </script>
 </body>
 
