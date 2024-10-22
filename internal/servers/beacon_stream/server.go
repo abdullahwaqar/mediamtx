@@ -17,17 +17,25 @@ type Message struct {
 	Candidate string `json:"candidate,omitempty"`
 }
 
+// type GPSData struct {
+// 	Timestamp string  `json:"timestamp"`
+// 	Latitude  float64 `json:"latitude"`
+// 	Longitude float64 `json:"longitude"`
+// }
+
 // GPSData represents the structure of GPS data to be sent
 type GPSData struct {
-	Timestamp string  `json:"timestamp"`
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
+	// * Yaw, Pitch, Roll values
+	Values    [3]float64 `json:"values"`
+	Timestamp int64      `json:"timestamp"`
+	Accuracy  int        `json:"accuracy"`
 }
 
 var (
 	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
+		// Allow all origins for testing; restrict in production
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -76,16 +84,17 @@ func handleSignaling(client *Client) {
 	}
 
 	dataChannel.OnOpen(func() {
-		log.Printf("DataChannel opened")
+		log.Printf("DataChannel opened for client")
 		addDataChannel(dataChannel)
 
-		// Start broadcastGPSData only once
+		// * Start the broadcaster only once
 		once.Do(func() {
 			go broadcastGPSData()
 		})
 	})
 
 	dataChannel.OnClose(func() {
+		log.Printf("DataChannel closed for client")
 		removeDataChannel(dataChannel)
 	})
 
@@ -187,27 +196,56 @@ func removeDataChannel(dc *webrtc.DataChannel) {
 }
 
 func broadcastGPSData() {
-	// * 100 Hz = 100 messages/second
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
+	// * Connect to the external WebSocket server
+	externalWSURL := "ws://3.91.74.146:8485"
 
-	for range ticker.C {
-		gpsData := generateGPSData()
-		dataBytes, err := json.Marshal(gpsData)
+	for {
+		log.Printf("Connecting to external WebSocket server at %s", externalWSURL)
+		c, _, err := websocket.DefaultDialer.Dial(externalWSURL, nil)
 		if err != nil {
-			log.Printf("Failed to marshal GPS data: %v", err)
+			log.Printf("Failed to connect to external WebSocket server: %v", err)
+			time.Sleep(5 * time.Second)
 			continue
 		}
 
-		dcMux.Lock()
-		for _, dc := range dataChannels {
-			if dc.ReadyState() == webrtc.DataChannelStateOpen {
-				if err := dc.Send(dataBytes); err != nil {
-					log.Printf("Failed to send GPS data: %v", err)
-				}
+		log.Printf("Connected to external WebSocket server")
+		// Start reading messages
+		for {
+			_, msgBytes, err := c.ReadMessage()
+			if err != nil {
+				log.Printf("Error reading from external WebSocket: %v", err)
+				c.Close()
+				break
+			}
+
+			var gpsData GPSData
+			if err := json.Unmarshal(msgBytes, &gpsData); err != nil {
+				log.Printf("Failed to unmarshal GPS data: %v", err)
+				continue
+			}
+
+			// * Broadcast the received GPS data to all DataChannels
+			broadcastToDataChannels(gpsData)
+		}
+	}
+}
+
+// broadcastToDataChannels sends the GPSData to all connected WebRTC DataChannels
+func broadcastToDataChannels(gpsData GPSData) {
+	dataBytes, err := json.Marshal(gpsData)
+	if err != nil {
+		log.Printf("Failed to marshal GPS data: %v", err)
+		return
+	}
+
+	dcMux.Lock()
+	defer dcMux.Unlock()
+	for _, dc := range dataChannels {
+		if dc.ReadyState() == webrtc.DataChannelStateOpen {
+			if err := dc.Send(dataBytes); err != nil {
+				log.Printf("Failed to send GPS data: %v", err)
 			}
 		}
-		dcMux.Unlock()
 	}
 }
 
@@ -223,17 +261,5 @@ func sendMessage(client *Client, msg Message) {
 
 	if err := client.conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
 		log.Printf("WebSocket write error: %v", err)
-	}
-}
-
-func generateGPSData() GPSData {
-	now := time.Now()
-	latitude := 37.7749 + 0.0001*float64(now.Second()%60)
-	longitude := -122.4194 + 0.0001*float64(now.Second()%60)
-
-	return GPSData{
-		Timestamp: now.Format(time.RFC3339),
-		Latitude:  latitude,
-		Longitude: longitude,
 	}
 }

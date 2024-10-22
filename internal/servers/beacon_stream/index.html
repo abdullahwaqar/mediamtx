@@ -55,7 +55,7 @@
         const totalCountSpan = document.getElementById("totalCount");
 
         // Variables
-        let pc = null;
+        let gpsPc = null;
         let dataChannel = null;
         let remoteDescriptionSet = false;
         const iceCandidateQueue = [];
@@ -114,14 +114,14 @@
 
         // Create RTCPeerConnection
         const createPeerConnection = () => {
-            pc = new RTCPeerConnection({
+            gpsPc = new RTCPeerConnection({
                 iceServers: [
                     { urls: "stun:stun.l.google.com:19302" }
                 ]
             });
 
             // Handle ICE candidates
-            pc.onicecandidate = (event) => {
+            gpsPc.onicecandidate = (event) => {
                 if (event.candidate) {
                     const message = {
                         candidate: JSON.stringify(event.candidate)
@@ -134,18 +134,18 @@
             };
 
             // Handle connection state changes
-            pc.oniceconnectionstatechange = () => {
-                console.log(`ICE Connection State: ${pc.iceConnectionState}`);
-                logStatus(`ICE Connection State: ${pc.iceConnectionState}`);
-                if (pc.iceConnectionState === "connected") {
+            gpsPc.oniceconnectionstatechange = () => {
+                console.log(`ICE Connection State: ${gpsPc.iceConnectionState}`);
+                logStatus(`ICE Connection State: ${gpsPc.iceConnectionState}`);
+                if (gpsPc.iceConnectionState === "connected") {
                     logStatus("Connected!");
-                } else if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+                } else if (gpsPc.iceConnectionState === "disconnected" || gpsPc.iceConnectionState === "failed") {
                     logStatus("Connection failed/disconnected.");
                 }
             };
 
             // Handle DataChannel messages if receiving channel
-            pc.ondatachannel = (event) => {
+            gpsPc.ondatachannel = (event) => {
                 const receiveChannel = event.channel;
                 receiveChannel.onopen = () => {
                     console.log("Receive DataChannel is open.");
@@ -179,7 +179,7 @@
 
         // Create DataChannel for sending messages
         const createDataChannel = () => {
-            dataChannel = pc.createDataChannel("gpsData");
+            dataChannel = gpsPc.createDataChannel("gpsData");
             dataChannel.onopen = () => {
                 console.log("DataChannel is open.");
                 logStatus("DataChannel is open.");
@@ -200,12 +200,12 @@
         // Create and send SDP offer
         const createAndSendOffer = async () => {
             try {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
+                const offer = await gpsPc.createOffer();
+                await gpsPc.setLocalDescription(offer);
                 logStatus("SDP offer created and set as local description.");
 
                 const message = {
-                    sdp: JSON.stringify(pc.localDescription)
+                    sdp: JSON.stringify(gpsPc.localDescription)
                 };
                 signalingSocket.send(JSON.stringify(message));
                 console.log("Sent SDP offer:", offer);
@@ -219,7 +219,7 @@
         const handleRemoteSDP = async (sdp) => {
             try {
                 const remoteDesc = new RTCSessionDescription(JSON.parse(sdp));
-                await pc.setRemoteDescription(remoteDesc);
+                await gpsPc.setRemoteDescription(remoteDesc);
                 remoteDescriptionSet = true;
                 console.log("Remote description set.");
                 logStatus("Remote description set.");
@@ -227,7 +227,7 @@
                 // Add any buffered ICE candidates
                 for (const candidate of iceCandidateQueue) {
                     try {
-                        await pc.addIceCandidate(candidate);
+                        await gpsPc.addIceCandidate(candidate);
                         console.log("Added buffered ICE candidate:", candidate);
                         logMessage("Added buffered ICE candidate: " + JSON.stringify(candidate));
                     } catch (err) {
@@ -247,7 +247,7 @@
             try {
                 const candidate = new RTCIceCandidate(JSON.parse(candidateJSON));
                 if (remoteDescriptionSet) {
-                    await pc.addIceCandidate(candidate);
+                    await gpsPc.addIceCandidate(candidate);
                     console.log("Added ICE candidate:", candidate);
                     logMessage("Added ICE candidate: " + JSON.stringify(candidate));
                 } else {

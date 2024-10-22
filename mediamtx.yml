@@ -282,7 +282,7 @@ rtmpServerCert: server.crt
 # Enable reading streams with the HLS protocol.
 hls: yes
 # Address of the HLS listener.
-hlsAddress: :8888
+hlsAddress: :8088
 # Enable TLS/HTTPS on the HLS server.
 # This is required for Low-Latency HLS.
 hlsEncryption: no
@@ -699,11 +699,6 @@ pathDefaults:
 # for example "~^(test1|test2)$" will match both "test1" and "test2",
 # for example "~^prefix" will match all paths that start with "prefix".
 paths:
-  gps_stream:
-    source: publisher
-    sourceOnDemand: no
-    maxReaders: 0
-
   # paths:
   # example:
   # my_camera:
