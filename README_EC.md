@@ -1,83 +1,123 @@
-# GPS Server Implementation Documentation
+# GPS Server Implementation in MediaMTX
+
+This documentation provides a semi-technical overview of the GPS server implementation within the MediaMTX project. The key components include server implementations for GPS data streaming using WebRTC, signaling via WebSockets, and configuration details to enable these features.
+
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Server Implementation](#server-implementation)
+  - [Broadcasters](#broadcasters)
+- [Configuration](#configuration)
+  - [GPS Configuration Example](#gps-configuration-example)
+- [Client-Side Implementation](#client-side-implementation)
+- [Building and Running](#building-and-running)
+  - [Using Docker](#using-docker)
+  - [For Development](#for-development)
+- [Important Notes](#important-notes)
+- [Conclusion](#conclusion)
 
 ## Introduction
 
-This documentation provides a semi-technical overview of the new additions and points of interest in the GPS server implementation. The primary focus is on the `internal/servers/beacon_stream` folder, which includes the server implementation for GPS data communication using WebRTC and signaling via WebSockets. Additionally, it introduces three broadcasters for transmitting GPS data over different protocols.
+The point of interest and new addition to the MediaMTX project is the folder:
 
-## Folder Structure and Components
+```
+internal/servers/beacon_stream
+```
 
-### Server Implementation
+This directory includes the server implementation for GPS data streaming that communicates using WebRTC and utilizes WebSockets for signaling.
 
-The server implementation is located in the `internal/servers/beacon_stream` directory. This server handles GPS data communication using WebRTC and utilizes WebSockets for signaling.
+## Server Implementation
+
+The server implementation is designed to handle GPS data streaming through various protocols. It communicates using WebRTC for media transmission and WebSockets for signaling.
 
 ### Broadcasters
 
-There are three broadcasters implemented:
+Within the `internal/servers/beacon_stream` folder, there are three broadcasters:
 
-- **broadcastGPSDataByWebsocket**
-- **broadcastGPSDataByTCP**
-- **broadcastGPSDataByUDP**
+- **`broadcastGPSDataByWebsocket`**
+- **`broadcastGPSDataByTCP`**
+- **`broadcastGPSDataByUDP`**
 
-As the names suggest, these broadcasters connect to their respective server types, dictated by the configuration settings. They handle the transmission of GPS data over WebSocket, TCP, and UDP protocols, respectively.
+As the names suggest, each broadcaster connects to the respective server type dictated by the configuration:
 
-## GPS Configuration
+- **WebSocket**: Uses WebSockets to receive GPS data.
+- **TCP**: Connects to a TCP server for GPS data.
+- **UDP**: Connects to a UDP server for GPS data.
 
-The GPS server's behavior is controlled via the `gpsConfig` section in the `mediamtx.yml` configuration file. If the `gpsConfig` key is not present, the GPS server will not be active, and the application will function as the default MediaMTX server without the extended GPS capabilities.
+These broadcasters are controlled via the configuration file and are responsible for receiving GPS data from the specified server and protocol.
 
-Below is the configuration snippet:
+## Configuration
+
+The GPS server functionality is configurable through the `mediamtx.yml` file. The configuration determines whether the GPS server is active and specifies the connection details.
+
+If the `gpsConfig` key is absent in the configuration file, the GPS server will not be active, and MediaMTX will function as the default server without the extended GPS capability.
+
+### GPS Configuration Example
+
+Below is an example of the GPS configuration section in `mediamtx.yml`:
 
 ```yaml
 ###############################################
-# GPS config. This holds the protocol, IP address, and port of the server that needs to connect to get the GPS data stream
-# 'protocol' dictates the type of server to connect to in order to receive the data stream that will be sent over the data channel
+# GPS Configuration
+# This holds the protocol, IP address, and port of the server that needs to connect to get the GPS data stream.
+# The protocol dictates the type of server to connect to for the data stream that will be sent over the data channel.
+
 gpsConfig:
-  # Can be 'ws', 'tcp', or 'udp'
+  # Can be 'ws' (WebSocket), 'tcp', or 'udp'
   protocol: udp
 
-  # Specify server's IP address to connect to
+  # Specify the server's IP address to connect to
   ipAddress: 0.0.0.0
 
   # Port number of the server
   port: 13370
 ```
 
-### Configuration Parameters
-
-- **protocol**: Defines the protocol used to connect to the GPS data source. Valid options are:
-  - `ws` for WebSocket
-  - `tcp` for TCP
-  - `udp` for UDP
-
-- **ipAddress**: The IP address of the server providing the GPS data stream.
-
-- **port**: The port number on which the GPS data server is listening.
+- **`protocol`**: Specifies the protocol to use (`ws`, `tcp`, or `udp`).
+- **`ipAddress`**: The IP address of the GPS data server.
+- **`port`**: The port number of the GPS data server.
 
 ## Client-Side Implementation
 
-The client-side code responsible for handling the GPS data is located at `internal/servers/webrtc/read_index.html`. A new script has been added to this HTML file, which:
+The client-side implementation can be found in:
+
+```
+internal/servers/webrtc/read_index.html
+```
+
+A new script has been added to this HTML file that:
 
 - Establishes a peer connection.
-- Opens a data channel named `"gps"`.
-- Renders the GPS data output using plain JavaScript.
+- Opens a data channel named **"gps"**.
+- Renders the GPS output data on the client side.
 
-### Important Note
+The script is written in plain JavaScript.
 
-If you make any changes to the `read_index.html` file, you will need to rebuild the binary because MediaMTX includes this file in the binary and serves it directly from memory.
+**Note**: If you make any changes to this HTML file, you will need to rebuild the binary since MediaMTX includes this file in the binary and serves it directly from memory.
 
-## Compilation Instructions
+## Building and Running
 
-To compile the application and generate binaries for all supported platforms, you need to have Docker installed on your system. Follow these steps:
+### Using Docker
 
-1. Ensure Docker is installed and running.
-2. Navigate to the project's root directory.
-3. Run the following command:
+To compile the binaries for all supported platforms, you need to have Docker installed. Run the following command in the terminal:
 
-   ```bash
-   make binaries
-   ```
+```bash
+make binaries
+```
 
-This command will create the binaries for all supported platforms.
+This command will create the binaries using Docker.
 
----
+### For Development
 
-Please ensure all configurations are set correctly before running the server to enable the GPS functionalities.
+For development purposes, you need to have the latest version of Go installed on your system. You can build and run MediaMTX by executing:
+
+```bash
+go build -o mediamtx . && ./mediamtx
+```
+
+This command builds the `mediamtx` binary and runs it.
+
+## Important Notes
+
+- **Rebuilding After HTML Changes**: If you modify the `read_index.html` file, you must rebuild the binary. MediaMTX embeds this file into the binary and serves it directly from memory.
+- **Configuration Absence**: Without the `gpsConfig` key in `mediamtx.yml`, the GPS server features will be inactive, and MediaMTX will operate with its default capabilities.
