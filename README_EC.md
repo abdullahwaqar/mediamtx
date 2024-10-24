@@ -14,7 +14,6 @@ This documentation provides a semi-technical overview of the GPS server implemen
   - [Using Docker](#using-docker)
   - [For Development](#for-development)
 - [Important Notes](#important-notes)
-- [Conclusion](#conclusion)
 
 ## Introduction
 
