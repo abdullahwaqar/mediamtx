@@ -1,0 +1,24 @@
+{
+	"files": [
+		{
+			"path": "internal/servers/webrtc/read_index.html",
+			"bookmarks": [
+				{
+					"line": 529,
+					"column": 35,
+					"label": ""
+				},
+				{
+					"line": 546,
+					"column": 50,
+					"label": ""
+				},
+				{
+					"line": 727,
+					"column": 52,
+					"label": ""
+				}
+			]
+		}
+	]
+}
