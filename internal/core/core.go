@@ -627,14 +627,46 @@ func (p *Core) createResources(initial bool) error {
 		}
 	}
 
-	// * Start the beacon server for GPS transmission in a separate goroutine
-	go func() {
-		http.HandleFunc("/gps-ws", beacon_stream.HandleBeaconStreamWebSocket)
-		p.Log(logger.Info, "Starting beacon server on :8080")
-		if err := http.ListenAndServe(":8080", nil); err != nil && err != http.ErrServerClosed {
-			p.Log(logger.Error, "Beacon server failed: %v", err)
+	// * Unified GPSConfig validation and server start
+	if p.conf.GpsConfig != nil {
+		// * Validate the gpsConfig details
+		if p.conf.GpsConfig.Protocol != "" && p.conf.GpsConfig.IPAddress != "" && p.conf.GpsConfig.Port != 0 {
+			// * Validate the protocol
+			validProtocols := map[string]bool{"ws": true, "tcp": true, "udp": true}
+			if validProtocols[p.conf.GpsConfig.Protocol] {
+				p.Log(logger.Info, "GPS stream is enabled with protocol:%s", p.conf.GpsConfig.Protocol)
+				go func() {
+					mux := http.NewServeMux()
+
+					mux.HandleFunc("/ice", func(w http.ResponseWriter, r *http.Request) {
+						beacon_stream.ICEHandler(w, r, &p.conf.WebRTCICEServers2)
+					})
+
+					mux.HandleFunc("/gps-ws", func(w http.ResponseWriter, r *http.Request) {
+						beacon_stream.HandleBeaconStreamWebSocket(w, r, p.conf.GpsConfig, &p.conf.WebRTCICEServers2)
+					})
+
+					handler := beacon_stream.EnableCORS(mux)
+
+					p.Log(logger.Info, "Starting beacon server on :8080")
+
+					// * Start the server with the handler
+					if err := http.ListenAndServe(":8080", handler); err != nil && err != http.ErrServerClosed {
+						p.Log(logger.Error, "Beacon server failed: %v", err)
+					}
+				}()
+			} else {
+				p.Log(logger.Info, "GPS stream protocol is invalid. Must be one of 'ws', 'tcp', or 'udp'. GPS stream is disabled.")
+				p.Log(logger.Info, "GPS stream is disabled due to invalid protocol.")
+			}
+		} else {
+			// * Incomplete configuration, disable the GPS stream
+			p.Log(logger.Info, "GPS stream is disabled due to incomplete configuration.")
 		}
-	}()
+	} else {
+		// * gpsConfig is not set, so GPS stream is disabled
+		p.Log(logger.Info, "GPS stream is disabled because gpsConfig is not set.")
+	}
 
 	return nil
 }

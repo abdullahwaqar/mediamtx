@@ -584,19 +584,62 @@
 		let remoteDescriptionSet = false;
 		const iceCandidateQueue = [];
 
-		// Utility Functions
+		// Utility function to check if message is a valid JSON and matches expected structure
+		const isValidJsonAndStructure = (message) => {
+			try {
+				const parsedMessage = JSON.parse(message);
+
+				if (
+					parsedMessage &&
+					Array.isArray(parsedMessage.values) &&
+					parsedMessage.values.length === 3 &&
+					typeof parsedMessage.values[0] === 'number' &&
+					typeof parsedMessage.values[1] === 'number' &&
+					typeof parsedMessage.values[2] === 'number' &&
+					typeof parsedMessage.timestamp === 'number' &&
+					typeof parsedMessage.accuracy === 'number'
+				) {
+					return parsedMessage;
+				}
+			} catch (error) {
+				return null;
+			}
+			return null;
+		};
+
+		// Utility function to log status
 		const logStatus = (message) => {
-			console.log(message);
-			statusDiv.textContent = message;
+			const data = isValidJsonAndStructure(message);
+
+			if (data) {
+				// If it's a valid JSON object with the expected structure, display yaw, pitch, and roll
+				console.log('Valid JSON with expected structure:', data);
+				statusDiv.textContent = `Yaw: ${data.values[0]}, Pitch: ${data.values[1]}, Roll: ${data.values[2]} T: ${data.timestamp}, Accuracy: ${data.accuracy}`;
+			} else {
+				// Otherwise, just display the raw message
+				console.log('Displaying message as-is:', message);
+				statusDiv.textContent = message;
+			}
 		};
 
 		const signalingSocket = new WebSocket(SIGNALING_SERVER_URL);
 
 		signalingSocket.onopen = () => {
 			logStatus("Connected to signaling server.");
-			createPeerConnection();
-			createDataChannel();
-			createAndSendOffer();
+
+			fetch(`http://${window.location.hostname}:8080/ice`)
+				.then(response => {
+					return response.json();
+				}).then(data => {
+					createPeerConnection(data);
+
+					createDataChannel();
+					createAndSendOffer();
+				})
+				.catch(error => {
+					console.error('Error fetching ICE servers:', error);
+				});
+
 		};
 
 		signalingSocket.onerror = (error) => {
@@ -627,17 +670,8 @@
 		};
 
 		// Create RTCPeerConnection
-		const createPeerConnection = () => {
-			gpsPc = new RTCPeerConnection({
-				iceServers: [
-					{ urls: "stun:stun1.l.google.com:19302" },
-					{ urls: "stun:stun2.l.google.com:19302" },
-					{ urls: "stun:stun3.l.google.com:19302" },
-					{ urls: "stun:stun4.l.google.com:19302" },
-					{ urls: "stun:stun.stunprotocol.org:3478" },
-					{ urls: "stun:stun.sipgate.net:3478" }
-				]
-			});
+		const createPeerConnection = (iceServers) => {
+			gpsPc = new RTCPeerConnection({ iceServers });
 
 			// Handle ICE candidates
 			gpsPc.onicecandidate = (event) => {
@@ -683,7 +717,7 @@
 					} else {
 						// Handle string data directly
 						console.log("Received message via DataChannel:", event.data);
-						logStatus(event.data)
+						logStatus(new TextDecoder().decode(event.data))
 					}
 				};
 
@@ -703,9 +737,12 @@
 				// Optionally, send a welcome message
 				// dataChannel.send("Hello Server!");
 			};
+
 			dataChannel.onmessage = (event) => {
 				console.log("Received message via DataChannel:", event.data);
+				logStatus()
 			};
+
 			dataChannel.onclose = () => {
 				console.log("DataChannel is closed.");
 				logStatus("DataChannel is closed.");

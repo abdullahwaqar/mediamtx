@@ -377,7 +377,21 @@ webrtcAdditionalHosts: []
 # STUN servers allows to obtain and share the public IP of the server.
 # TURN/TURNS servers forces all traffic through them.
 webrtcICEServers2:
-  []
+  - url: "stun:stun1.l.google.com:19302"
+  - url: "stun:stun.relay.metered.ca:80"
+  - url: "turn:global.relay.metered.ca:80"
+    username: "ecf5f8761cdea0db12d65b22"
+    password: "M44rlymmvd9HQOZY"
+  - url: "turn:global.relay.metered.ca:80?transport=tcp"
+    username: "ecf5f8761cdea0db12d65b22"
+    password: "M44rlymmvd9HQOZY"
+  - url: "turn:global.relay.metered.ca:443"
+    username: "ecf5f8761cdea0db12d65b22"
+    password: "M44rlymmvd9HQOZY"
+  - url: "turns:global.relay.metered.ca:443?transport=tcp"
+    username: "ecf5f8761cdea0db12d65b22"
+    password: "M44rlymmvd9HQOZY"
+
   # - url: stun:stun.l.google.com:19302
   # if user is "AUTH_SECRET", then authentication is secret based.
   # the secret must be inserted into the password field.
@@ -388,9 +402,6 @@ webrtcICEServers2:
 webrtcHandshakeTimeout: 10s
 # Maximum time to gather video tracks.
 webrtcTrackGatherTimeout: 2s
-
-gpswebrtc: yes
-gpswebrtcAddress: ":8080"
 
 ###############################################
 # Global settings -> SRT server
@@ -707,3 +718,16 @@ paths:
   # Settings under path "all_others" are applied to all paths that
   # do not match another entry.
   all_others:
+
+###############################################
+#  GPS config. This holds the protocol, ip address and port of the server that needs to connect to get the GPS data stream
+# protocol dictates what type of server to connect to get the data stream that will be sent over the data channel
+gpsConfig:
+  # Can be ws, tcp, or udp
+  protocol: udp
+
+  # # Specify server's IP address to connect to
+  ipAddress: 0.0.0.0
+
+  # # Port number of the server
+  port: 13370

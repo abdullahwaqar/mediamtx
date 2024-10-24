@@ -1,29 +1,27 @@
 package beacon_stream
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/bluenviron/mediamtx/internal/conf"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
 )
 
-// Message defines the structure for signaling messages
+// * Message defines the structure for signaling messages
 type Message struct {
 	SDP       string `json:"sdp,omitempty"`
 	Candidate string `json:"candidate,omitempty"`
 }
 
-// type GPSData struct {
-// 	Timestamp string  `json:"timestamp"`
-// 	Latitude  float64 `json:"latitude"`
-// 	Longitude float64 `json:"longitude"`
-// }
-
-// GPSData represents the structure of GPS data to be sent
+// * GPSData represents the structure of GPS data to be sent
 type GPSData struct {
 	// * Yaw, Pitch, Roll values
 	Values    [3]float64 `json:"values"`
@@ -35,7 +33,7 @@ var (
 	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		// Allow all origins for testing; restrict in production
+		// * Allow all origins for testing;
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
@@ -45,13 +43,79 @@ var (
 	once         sync.Once // Ensures broadcastGPSData starts only once
 )
 
-// Client represents a connected WebSocket client
+// * Client represents a connected WebSocket client
 type Client struct {
 	conn *websocket.Conn
 	mu   sync.Mutex
+
+	ICEServers *conf.WebRTCICEServers
+	conf       *conf.GPSConfig
 }
 
-func HandleBeaconStreamWebSocket(w http.ResponseWriter, r *http.Request) {
+func parseICEServers(config conf.WebRTCICEServers) []webrtc.ICEServer {
+	// * Note: The ClientOnly field is not directly used in webrtc.ICEServer
+	var iceServers []webrtc.ICEServer
+
+	for _, server := range config {
+		iceServer := webrtc.ICEServer{
+			URLs: []string{server.URL},
+		}
+
+		if server.Username != "" {
+			iceServer.Username = server.Username
+		}
+
+		if server.Password != "" {
+			iceServer.Credential = server.Password
+			iceServer.CredentialType = webrtc.ICECredentialTypePassword
+		}
+
+		iceServers = append(iceServers, iceServer)
+	}
+
+	return iceServers
+}
+
+func ICEHandler(w http.ResponseWriter, r *http.Request, ICEServers *conf.WebRTCICEServers) {
+	w.Header().Set("Content-Type", "application/json")
+	mappedServers := make([]map[string]interface{}, len(*ICEServers))
+
+	for i, server := range *ICEServers {
+		mapped := map[string]interface{}{
+			"urls": server.URL,
+		}
+
+		mapped["username"] = server.Username
+		mapped["credential"] = server.Password
+		mappedServers[i] = mapped
+	}
+
+	jsonResponse, err := json.Marshal(mappedServers)
+	if err != nil {
+		http.Error(w, "Unable to marshal ICE servers", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonResponse)
+}
+
+func EnableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func HandleBeaconStreamWebSocket(w http.ResponseWriter, r *http.Request, conf *conf.GPSConfig, ICEServers *conf.WebRTCICEServers) {
+	fmt.Printf("%#v\n", ICEServers)
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
@@ -59,16 +123,14 @@ func HandleBeaconStreamWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	client := &Client{conn: conn}
+	client := &Client{conn: conn, conf: conf, ICEServers: ICEServers}
 	handleSignaling(client)
 }
 
 func handleSignaling(client *Client) {
 	api := webrtc.NewAPI()
 	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{"stun:stun.l.google.com:19302"}},
-		},
+		ICEServers: parseICEServers(*client.ICEServers),
 	}
 
 	peerConnection, err := api.NewPeerConnection(config)
@@ -89,7 +151,17 @@ func handleSignaling(client *Client) {
 
 		// * Start the broadcaster only once
 		once.Do(func() {
-			go broadcastGPSData()
+			switch client.conf.Protocol {
+			case "ws":
+				go broadcastGPSDataByWebsocket(fmt.Sprintf("%s://%s:%d", client.conf.Protocol, client.conf.IPAddress, client.conf.Port))
+			case "tcp":
+				go broadcastGPSDataByTCP(fmt.Sprintf("%s:%d", client.conf.IPAddress, client.conf.Port))
+			case "udp":
+				go broadcastGPSDataByUDP(fmt.Sprintf("%s:%d", client.conf.IPAddress, client.conf.Port))
+			default:
+				// * Ideally should never see this
+				log.Printf("No data source found")
+			}
 		})
 	})
 
@@ -195,13 +267,10 @@ func removeDataChannel(dc *webrtc.DataChannel) {
 	}
 }
 
-func broadcastGPSData() {
-	// * Connect to the external WebSocket server
-	externalWSURL := "ws://3.91.74.146:8485"
-
+func broadcastGPSDataByWebsocket(serverUrl string) {
 	for {
-		log.Printf("Connecting to external WebSocket server at %s", externalWSURL)
-		c, _, err := websocket.DefaultDialer.Dial(externalWSURL, nil)
+		log.Printf("Connecting to external WebSocket server at %s", serverUrl)
+		c, _, err := websocket.DefaultDialer.Dial(serverUrl, nil)
 		if err != nil {
 			log.Printf("Failed to connect to external WebSocket server: %v", err)
 			time.Sleep(5 * time.Second)
@@ -209,7 +278,8 @@ func broadcastGPSData() {
 		}
 
 		log.Printf("Connected to external WebSocket server")
-		// Start reading messages
+
+		// * Start reading messages
 		for {
 			_, msgBytes, err := c.ReadMessage()
 			if err != nil {
@@ -230,7 +300,87 @@ func broadcastGPSData() {
 	}
 }
 
-// broadcastToDataChannels sends the GPSData to all connected WebRTC DataChannels
+// Connects to a TCP server and expects the same gps data
+//
+// For dev context: Connection to the tcp server can be tested by running the nc_tcp_server_test.sh file and should see output like
+//
+//	DataChannel opened for client
+//	Connecting to TCP server at 0.0.0.0:13370
+//	Connected to TCP server at 0.0.0.0:13370
+func broadcastGPSDataByTCP(serverUrl string) {
+	for {
+		log.Printf("Connecting to TCP server at %s", serverUrl)
+		conn, err := net.Dial("tcp", serverUrl)
+		if err != nil {
+			log.Printf("Failed to connect to TCP server: %v", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		log.Printf("Connected to TCP server at %s", serverUrl)
+		reader := bufio.NewReader(conn)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				log.Printf("Error reading from TCP server: %v", err)
+				conn.Close()
+				break
+			}
+
+			var gpsData GPSData
+			if err := json.Unmarshal(line, &gpsData); err != nil {
+				log.Printf("Failed to unmarshal GPS data from TCP: %v", err)
+				continue
+			}
+			broadcastToDataChannels(gpsData)
+		}
+	}
+}
+
+// Connects to a TCP server and expects the same gps data
+//
+// For dev context: Connection to the tcp server can be tested by running the nc_udp_server_test.sh file and should see output like
+//
+//	DataChannel opened for client
+//	Connecting to UDP server at 0.0.0.0:13370
+//	Connected to UDP server at 0.0.0.0:13370
+func broadcastGPSDataByUDP(serverUrl string) {
+	udpAddr, err := net.ResolveUDPAddr("udp", serverUrl)
+	if err != nil {
+		log.Printf("Failed to resolve UDP address: %v", err)
+		return
+	}
+
+	conn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		log.Printf("Failed to connect to UDP server: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	log.Printf("Connected to UDP server at %s", serverUrl)
+
+	buf := make([]byte, 1024)
+	for {
+		// ? Optionally send a request if required by your UDP server protocol
+		// ? conn.Write([]byte("request"))
+
+		n, _, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			log.Printf("Error reading from UDP server: %v", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		var gpsData GPSData
+		if err := json.Unmarshal(buf[:n], &gpsData); err != nil {
+			log.Printf("Failed to unmarshal GPS data from UDP: %v", err)
+			continue
+		}
+		broadcastToDataChannels(gpsData)
+	}
+}
+
+// * Sends the GPSData to all connected WebRTC DataChannels
 func broadcastToDataChannels(gpsData GPSData) {
 	dataBytes, err := json.Marshal(gpsData)
 	if err != nil {
