@@ -727,7 +727,7 @@ gpsConfig:
   protocol: udp
 
   # # Specify server's IP address to connect to
-  ipAddress: 0.0.0.0
+  ipAddress: 127.0.0.1
 
   # # Port number of the server
   port: 13370
