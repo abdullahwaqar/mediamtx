@@ -340,7 +340,7 @@ func broadcastGPSDataByTCP(serverUrl string) {
 //
 // For dev context: Connection to the udp server can be tested by running the nc_udp_server_test.sh file and should see output like
 // In UDP communication, there's no concept of a persistent connection like there is in TCP; instead, you send and receive messages to and from ports.
-// net.ListenUDP function binds to a local address and port to UDP packets
+// net.ListenUDP function binds to a local address and port to receive UDP packets
 //
 //	DataChannel opened for client
 //	Connecting to UDP server at 0.0.0.0:13370
