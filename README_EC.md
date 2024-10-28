@@ -14,7 +14,7 @@ This documentation provides a semi-technical overview of the GPS server implemen
   - [Using Docker](#using-docker)
   - [For Development](#for-development)
 - [Important Notes](#important-notes)
-- [Conclusion](#conclusion)
+- [Brief Architecture](#brief-architecture)
 
 ## Introduction
 
@@ -121,3 +121,54 @@ This command builds the `mediamtx` binary and runs it.
 
 - **Rebuilding After HTML Changes**: If you modify the `read_index.html` file, you must rebuild the binary. MediaMTX embeds this file into the binary and serves it directly from memory.
 - **Configuration Absence**: Without the `gpsConfig` key in `mediamtx.yml`, the GPS server features will be inactive, and MediaMTX will operate with its default capabilities.
+
+---
+
+### Brief Architecture
+
+Modified MediaMTX by adding a **separate data channel** for transmitting GPS data, as MediaMTX typically only handles media streams (audio/video). In a WebRTC context, media streams require specific metadata, codec information, and a more complex handshake process to handle the transmission.
+
+Since GPS data doesn’t need this level of complexity, and WebRTC channels are designed to handle distinct types of data, creating a dedicated data channel, kept the media and GPS data transmission separate, ensuring each type of data is handled appropriately without interfering with the other.
+
+### 1. **Integration of WebRTC with a Separate Data Channel:**
+
+- Leveraged **Pion WebRTC**, which is already included as a dependency in MediaMTX, to create a separate WebRTC **data channel**.
+- This data channel is solely responsible for transmitting **GPS data** (yaw, pitch, roll, timestamp, and accuracy) to connected clients. It operates in parallel with the media channels, ensuring the system continues handling media while also allowing GPS data transmission.
+
+### 2. **Non-blocking Server Setup:**
+
+- The WebRTC server is created in a separate **Go routine**, ensuring that it runs in a **non-blocking** fashion. The GPS broadcasting server only starts if the appropriate GPS configuration is present (such as protocol, IP address, and port).
+- This ensures that the GPS data channel does not interfere with the media streaming processes, keeping the system's core media-handling capabilities intact while extending its functionality.
+
+### 3. **Simple Signaling Mechanism:**
+
+- Kept the signaling mechanism as simple as possible to maintain a balance between functionality and complexity. WebRTC signaling is managed via **WebSocket**, handling **SDP offers**, **ICE candidates**, and peer connection establishment with minimal overhead.
+- I used **WebSocket** for handling the signaling and managing WebRTC connection requests. Once the client sends an SDP offer, the server responds with an SDP answer, setting up the WebRTC connection.
+
+### 4. **Data Channel Handling:**
+
+- Once the WebRTC connection is established, I create a **data channel** with the label `"data"`. This channel is dedicated to sending GPS data, completely separate from the media streams.
+- When the data channel opens, the server begins transmitting the GPS data. Made sure this process only starts **once** per connection to avoid redundant broadcasting and potential issues with multiple broadcast loops.
+
+### 5. **Protocol-Specific GPS Broadcasting:**
+
+- Depending on the GPS configuration, the server connects to external sources to retrieve GPS data using the protocol specified (WebSocket, TCP, or UDP).
+  - **WebSocket:** The function `broadcastGPSDataByWebsocket` connects to an external WebSocket server and listens for GPS data to broadcast to WebRTC clients.
+  - **TCP/UDP:** Similarly, `broadcastGPSDataByTCP` and `broadcastGPSDataByUDP` handle connections to TCP/UDP servers, read GPS data, and transmit it over the data channels.
+- The GPS data is stored in the **GPSData** structure, which holds the values (yaw, pitch, roll), timestamp, and accuracy, and is transmitted to all connected WebRTC clients.
+
+### 6. **Simple Synchronization and Concurrency:**
+
+- To ensure smooth concurrent access to shared resources, used **sync.Mutex** for managing access to the data channels. The data channels are stored in a slice, and methods like `addDataChannel` and `removeDataChannel` ensure thread-safe modifications.
+- Additionally, a **sync.Once** ensures that the GPS broadcasting logic is only initiated once for each session, keeping things simple and avoiding multiple unnecessary connections.
+
+### 7. **Focus on Simplicity:**
+
+- Throughout the modification process, made a conscious effort to keep the architecture **simple**. For example, I avoided adding unnecessary complexity in the signaling process and kept the configuration-driven GPS broadcasting flexible yet minimal.
+- The WebRTC server and data broadcasting functions operate independently of the media transmission functions, ensuring that the core MediaMTX functionality remains unchanged while enabling seamless GPS data streaming.
+
+### Key Aspects
+
+- **Separation of concerns**: The data channel is isolated from the media streaming functionality, ensuring that the media transmission (audio/video) remains unaffected.
+- **Protocol flexibility**: GPS data can be transmitted over WebSocket, TCP, or UDP, depending on the configuration.
+- **Concurrency and simplicity**: I ensured non-blocking operation with simple synchronization techniques to keep the system lightweight and efficient.

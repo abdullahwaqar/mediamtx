@@ -336,9 +336,11 @@ func broadcastGPSDataByTCP(serverUrl string) {
 	}
 }
 
-// Connects to a TCP server and expects the same gps data
+// Connects to a UDP server and expects the same gps data
 //
-// For dev context: Connection to the tcp server can be tested by running the nc_udp_server_test.sh file and should see output like
+// For dev context: Connection to the udp server can be tested by running the nc_udp_server_test.sh file and should see output like
+// In UDP communication, there's no concept of a persistent connection like there is in TCP; instead, you send and receive messages to and from ports.
+// net.ListenUDP function binds to a local address and port to UDP packets
 //
 //	DataChannel opened for client
 //	Connecting to UDP server at 0.0.0.0:13370
@@ -350,23 +352,20 @@ func broadcastGPSDataByUDP(serverUrl string) {
 		return
 	}
 
-	conn, err := net.DialUDP("udp", nil, udpAddr)
+	conn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		log.Printf("Failed to connect to UDP server: %v", err)
+		log.Printf("Failed to listen on UDP address: %v", err)
 		return
 	}
 	defer conn.Close()
 
-	log.Printf("Connected to UDP server at %s", serverUrl)
+	log.Printf("Listening on UDP address %s", serverUrl)
 
 	buf := make([]byte, 1024)
 	for {
-		// ? Optionally send a request if required by your UDP server protocol
-		// ? conn.Write([]byte("request"))
-
 		n, _, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			log.Printf("Error reading from UDP server: %v", err)
+			log.Printf("Error reading from UDP: %v", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -376,6 +375,7 @@ func broadcastGPSDataByUDP(serverUrl string) {
 			log.Printf("Failed to unmarshal GPS data from UDP: %v", err)
 			continue
 		}
+
 		broadcastToDataChannels(gpsData)
 	}
 }
