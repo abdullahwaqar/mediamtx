@@ -23,10 +23,10 @@ type Message struct {
 
 // * GPSData represents the structure of GPS data to be sent
 type GPSData struct {
-	// * Yaw, Pitch, Roll values
-	Values    [3]float64 `json:"values"`
-	Timestamp int64      `json:"timestamp"`
-	Accuracy  int        `json:"accuracy"`
+	MarkerID int     `json:"markerId"`
+	AngleX   float64 `json:"angle_x"`
+	AngleY   float64 `json:"angle_y"`
+	Distance float64 `json:"distance"`
 }
 
 var (

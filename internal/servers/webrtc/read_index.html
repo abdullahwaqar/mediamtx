@@ -589,18 +589,16 @@
 			try {
 				const parsedMessage = JSON.parse(message);
 
-				if (
-					parsedMessage &&
-					Array.isArray(parsedMessage.values) &&
-					parsedMessage.values.length === 3 &&
-					typeof parsedMessage.values[0] === 'number' &&
-					typeof parsedMessage.values[1] === 'number' &&
-					typeof parsedMessage.values[2] === 'number' &&
-					typeof parsedMessage.timestamp === 'number' &&
-					typeof parsedMessage.accuracy === 'number'
-				) {
-					return parsedMessage;
-				}
+				// if (
+				// 	parsedMessage &&
+				// 	["markerId", "angle_x", "angle_y", "distance"].every(
+				// 		key => typeof parsedMessage[key] === "number"
+				// 	)
+				// ) {
+				// }
+
+				return parsedMessage;
+
 			} catch (error) {
 				return null;
 			}
@@ -612,11 +610,10 @@
 			const data = isValidJsonAndStructure(message);
 
 			if (data) {
-				// If it's a valid JSON object with the expected structure, display yaw, pitch, and roll
 				console.log('Valid JSON with expected structure:', data);
-				statusDiv.textContent = `Yaw: ${data.values[0]}, Pitch: ${data.values[1]}, Roll: ${data.values[2]} T: ${data.timestamp}, Accuracy: ${data.accuracy}`;
+				statusDiv.textContent = `Marker ID: ${data.markerId}, Angle X: ${data.angle_x}, Angle Y: ${data.angle_y}, Distance: ${data.distance}`;
 			} else {
-				// Otherwise, just display the raw message
+				// Just display the raw message
 				console.log('Displaying message as-is:', message);
 				statusDiv.textContent = message;
 			}
