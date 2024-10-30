@@ -155,9 +155,10 @@ var defaultAuthInternalUsers = AuthInternalUsers{
 }
 
 type GPSConfig struct {
-	Protocol  string `json:"protocol"`  // ws, tcp, or udp
-	IPAddress string `json:"ipAddress"` // IP address to connect to
-	Port      int    `json:"port"`      // Port number of the server
+	Protocol   string `json:"protocol"`  // ws, tcp, or udp
+	IPAddress  string `json:"ipAddress"` // IP address to connect to
+	Port       int    `json:"port"`      // Port number of the server
+	RawDataLog bool   `json:"rawDataLog"`
 }
 
 // Conf is a configuration.

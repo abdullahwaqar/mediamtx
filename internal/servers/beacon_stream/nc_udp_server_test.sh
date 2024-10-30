@@ -1,17 +1,10 @@
 #!/bin/bash
 
+SERVER_IP="127.0.0.1"
 PORT=13370
 
-echo "Starting UDP server on port $PORT..."
-
 while true; do
-    echo "Waiting for incoming UDP messages..."
-    nc -u -l -p $PORT | while read -r line; do
-        echo "Received message from client!"
-        echo "Message: $line"
-        
-        response="Server received: $line"
-        
-        echo "$response" | nc -u -w1 localhost $PORT
-    done
+    read -p "Enter a message to send: " message
+    echo "$message" | nc -u -w1 $SERVER_IP $PORT
+    echo "Message sent to $SERVER_IP:$PORT"
 done

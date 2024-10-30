@@ -15,13 +15,13 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-// * Message defines the structure for signaling messages
+// Message defines the structure for signaling messages
 type Message struct {
 	SDP       string `json:"sdp,omitempty"`
 	Candidate string `json:"candidate,omitempty"`
 }
 
-// * GPSData represents the structure of GPS data to be sent
+// GPSData represents the structure of GPS data to be sent
 type GPSData struct {
 	MarkerID int     `json:"markerId"`
 	AngleX   float64 `json:"angle_x"`
@@ -29,18 +29,58 @@ type GPSData struct {
 	Distance float64 `json:"distance"`
 }
 
+// Packet is an interface that all packet types implement
+type Packet interface {
+	GetType() string
+}
+
+// CommonPacket is used to determine the type of incoming JSON data
+type CommonPacket struct {
+	Type string `json:"type"`
+}
+
+// AttitudePacket represents a packet of type "attitude"
+type AttitudePacket struct {
+	Type      string     `json:"type"`
+	Values    [3]float64 `json:"values"`
+	Timestamp int64      `json:"timestamp"`
+}
+
+// GetType returns the packet type for AttitudePacket.
+func (a AttitudePacket) GetType() string {
+	return a.Type
+}
+
+// MarkerPacket represents a packet of type "marker"
+type MarkerPacket struct {
+	Type     string  `json:"type"`
+	MarkerID int     `json:"markerId"`
+	AngleX   float64 `json:"angle_x"`
+	AngleY   float64 `json:"angle_y"`
+	Distance float64 `json:"distance"`
+}
+
+// GetType returns the packet type for MarkerPacket
+func (m MarkerPacket) GetType() string {
+	return m.Type
+}
+
+// PacketWrapper is a wrapper that holds any type of Packet
+type PacketWrapper struct {
+	Packet Packet
+}
+
 var (
 	upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		// * Allow all origins for testing;
+		// Allow all origins for testing
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
 	}
 	dataChannels []*webrtc.DataChannel
 	dcMux        sync.Mutex
-	once         sync.Once // Ensures broadcastGPSData starts only once
+	once         sync.Once // * Ensures broadcastGPSData starts only once
 )
 
 // * Client represents a connected WebSocket client
@@ -50,6 +90,8 @@ type Client struct {
 
 	ICEServers *conf.WebRTCICEServers
 	conf       *conf.GPSConfig
+
+	rawDataLog bool
 }
 
 func parseICEServers(config conf.WebRTCICEServers) []webrtc.ICEServer {
@@ -113,9 +155,7 @@ func EnableCORS(next http.Handler) http.Handler {
 	})
 }
 
-func HandleBeaconStreamWebSocket(w http.ResponseWriter, r *http.Request, conf *conf.GPSConfig, ICEServers *conf.WebRTCICEServers) {
-	fmt.Printf("%#v\n", ICEServers)
-
+func HandleBeaconStreamWebSocket(w http.ResponseWriter, r *http.Request, conf *conf.GPSConfig, ICEServers *conf.WebRTCICEServers, rawDataLog bool) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
@@ -123,7 +163,7 @@ func HandleBeaconStreamWebSocket(w http.ResponseWriter, r *http.Request, conf *c
 	}
 	defer conn.Close()
 
-	client := &Client{conn: conn, conf: conf, ICEServers: ICEServers}
+	client := &Client{conn: conn, conf: conf, ICEServers: ICEServers, rawDataLog: rawDataLog}
 	handleSignaling(client)
 }
 
@@ -157,9 +197,8 @@ func handleSignaling(client *Client) {
 			case "tcp":
 				go broadcastGPSDataByTCP(fmt.Sprintf("%s:%d", client.conf.IPAddress, client.conf.Port))
 			case "udp":
-				go broadcastGPSDataByUDP(fmt.Sprintf("%s:%d", client.conf.IPAddress, client.conf.Port))
+				go broadcastGPSDataByUDP(fmt.Sprintf("%s:%d", client.conf.IPAddress, client.conf.Port), client.rawDataLog)
 			default:
-				// * Ideally should never see this
 				log.Printf("No data source found")
 			}
 		})
@@ -279,7 +318,6 @@ func broadcastGPSDataByWebsocket(serverUrl string) {
 
 		log.Printf("Connected to external WebSocket server")
 
-		// * Start reading messages
 		for {
 			_, msgBytes, err := c.ReadMessage()
 			if err != nil {
@@ -288,14 +326,7 @@ func broadcastGPSDataByWebsocket(serverUrl string) {
 				break
 			}
 
-			var gpsData GPSData
-			if err := json.Unmarshal(msgBytes, &gpsData); err != nil {
-				log.Printf("Failed to unmarshal GPS data: %v", err)
-				continue
-			}
-
-			// * Broadcast the received GPS data to all DataChannels
-			broadcastToDataChannels(gpsData)
+			broadcastRawDataToDataChannels(msgBytes)
 		}
 	}
 }
@@ -326,12 +357,7 @@ func broadcastGPSDataByTCP(serverUrl string) {
 				break
 			}
 
-			var gpsData GPSData
-			if err := json.Unmarshal(line, &gpsData); err != nil {
-				log.Printf("Failed to unmarshal GPS data from TCP: %v", err)
-				continue
-			}
-			broadcastToDataChannels(gpsData)
+			broadcastRawDataToDataChannels(line)
 		}
 	}
 }
@@ -345,7 +371,7 @@ func broadcastGPSDataByTCP(serverUrl string) {
 //	DataChannel opened for client
 //	Connecting to UDP server at 0.0.0.0:13370
 //	Connected to UDP server at 0.0.0.0:13370
-func broadcastGPSDataByUDP(serverUrl string) {
+func broadcastGPSDataByUDP(serverUrl string, rawDataLog bool) {
 	udpAddr, err := net.ResolveUDPAddr("udp", serverUrl)
 	if err != nil {
 		log.Printf("Failed to resolve UDP address: %v", err)
@@ -361,39 +387,32 @@ func broadcastGPSDataByUDP(serverUrl string) {
 
 	log.Printf("Listening on UDP address %s", serverUrl)
 
-	buf := make([]byte, 1024)
+	buf := make([]byte, 4096)
 	for {
-		n, _, err := conn.ReadFromUDP(buf)
+		n, addr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			log.Printf("Error reading from UDP: %v", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
-		var gpsData GPSData
-		if err := json.Unmarshal(buf[:n], &gpsData); err != nil {
-			log.Printf("Failed to unmarshal GPS data from UDP: %v", err)
-			continue
+		if rawDataLog {
+			rawData := buf[:n]
+			log.Printf("Received raw data from %s: %s", addr.String(), string(rawData))
 		}
 
-		broadcastToDataChannels(gpsData)
+		broadcastRawDataToDataChannels(buf[:n])
 	}
 }
 
-// * Sends the GPSData to all connected WebRTC DataChannels
-func broadcastToDataChannels(gpsData GPSData) {
-	dataBytes, err := json.Marshal(gpsData)
-	if err != nil {
-		log.Printf("Failed to marshal GPS data: %v", err)
-		return
-	}
-
+// * Sends the raw JSON data to all connected WebRTC DataChannels.
+func broadcastRawDataToDataChannels(data []byte) {
 	dcMux.Lock()
 	defer dcMux.Unlock()
 	for _, dc := range dataChannels {
 		if dc.ReadyState() == webrtc.DataChannelStateOpen {
-			if err := dc.Send(dataBytes); err != nil {
-				log.Printf("Failed to send GPS data: %v", err)
+			if err := dc.Send(data); err != nil {
+				log.Printf("Failed to send data to DataChannel: %v", err)
 			}
 		}
 	}

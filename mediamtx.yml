@@ -726,8 +726,10 @@ gpsConfig:
   # Can be ws, tcp, or udp
   protocol: udp
 
-  # # Specify server's IP address to connect to
+  # Specify server's IP address to connect to
   ipAddress: 127.0.0.1
 
-  # # Port number of the server
+  # Port number of the server
   port: 13370
+
+  rawDataLog: true
