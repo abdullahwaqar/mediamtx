@@ -635,6 +635,9 @@ func (p *Core) createResources(initial bool) error {
 			validProtocols := map[string]bool{"ws": true, "tcp": true, "udp": true}
 			if validProtocols[p.conf.GpsConfig.Protocol] {
 				p.Log(logger.Info, "GPS stream is enabled with protocol:%s", p.conf.GpsConfig.Protocol)
+				p.Log(logger.Info, "GPS stream is enabled with protocol:%s", p.conf.GpsConfig.Protocol)
+				p.Log(logger.Info, "Raw data log: %v", p.conf.GpsConfig.RawDataLog)
+
 				go func() {
 					mux := http.NewServeMux()
 
@@ -643,7 +646,7 @@ func (p *Core) createResources(initial bool) error {
 					})
 
 					mux.HandleFunc("/gps-ws", func(w http.ResponseWriter, r *http.Request) {
-						beacon_stream.HandleBeaconStreamWebSocket(w, r, p.conf.GpsConfig, &p.conf.WebRTCICEServers2)
+						beacon_stream.HandleBeaconStreamWebSocket(w, r, p.conf.GpsConfig, &p.conf.WebRTCICEServers2, p.conf.GpsConfig.RawDataLog)
 					})
 
 					handler := beacon_stream.EnableCORS(mux)

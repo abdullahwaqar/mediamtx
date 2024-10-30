@@ -56,6 +56,53 @@
 			z-index: 3;
 			text-align: left;
 		}
+
+		/* HUD Container */
+		.hud-container {
+			position: absolute;
+			bottom: 20px;
+			left: 20px;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			z-index: 2;
+		}
+
+		/* HUD Boxes */
+		.hud-box {
+			background-color: rgba(0, 0, 0, 0.7);
+			color: white;
+			padding: 15px;
+			border-radius: 8px;
+			min-width: 200px;
+			box-sizing: border-box;
+			text-shadow: 0 0 5px black;
+		}
+
+		.hud-box h3 {
+			margin: 0 0 10px 0;
+			font-size: 16px;
+			border-bottom: 1px solid #555;
+			padding-bottom: 5px;
+		}
+
+		.hud-box p {
+			margin: 5px 0;
+			font-size: 14px;
+		}
+
+		/* Marker Graph HUD Box */
+		#marker-graph-hud {
+			width: 230px;
+		}
+
+		#marker-graph {
+			width: 200px;
+			height: 200px;
+			background-color: #2e2e2e;
+			border: 1px solid #555;
+			border-radius: 4px;
+		}
 	</style>
 </head>
 
@@ -64,6 +111,32 @@
 	<video id="video"></video>
 	<div id="message"></div>
 	<div id="status"></div>
+
+	<!-- HUD Container -->
+	<div class="hud-container">
+		<!-- Attitude HUD Box -->
+		<div class="hud-box" id="attitude-hud">
+			<h3>Attitude</h3>
+			<p>Yaw: <span id="yaw">0.000</span>°</p>
+			<p>Pitch: <span id="pitch">0.000</span>°</p>
+			<p>Roll: <span id="roll">0.000</span>°</p>
+		</div>
+
+		<!-- Marker HUD Box -->
+		<div class="hud-box" id="marker-hud">
+			<h3>Marker</h3>
+			<p>ID: <span id="marker-id">N/A</span></p>
+			<p>Angle X: <span id="angle-x">0.000</span>°</p>
+			<p>Angle Y: <span id="angle-y">0.000</span>°</p>
+			<p>Distance: <span id="distance">0.000</span>m</p>
+		</div>
+
+		<!-- Marker Graph HUD Box -->
+		<div class="hud-box" id="marker-graph-hud">
+			<h3>Marker Graph</h3>
+			<canvas id="marker-graph" width="200" height="200"></canvas>
+		</div>
+	</div>
 
 	<script>
 
@@ -584,19 +657,170 @@
 		let remoteDescriptionSet = false;
 		const iceCandidateQueue = [];
 
+		function radiansToDegrees(radians) {
+			return radians * (180 / Math.PI);
+		}
+
+		function initializeGraph() {
+			const canvas = document.getElementById("marker-graph");
+			const ctx = canvas.getContext("2d");
+
+			// Clear the canvas
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+			// Draw background
+			ctx.fillStyle = "#2e2e2e";
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			// Draw grid lines
+			ctx.strokeStyle = "#555555";
+			ctx.lineWidth = 1;
+
+			const gridSpacingDegrees = 30; // Degrees between grid lines
+			const totalDegrees = 240; // -120 to +120
+			const pixelsPerDegree = canvas.width / totalDegrees; // 200 / 240 ≈ 0.83 pixels per degree
+
+			// Draw vertical grid lines (constant angleX)
+			for (let i = -120; i <= 120; i += gridSpacingDegrees) {
+				const x = (i + 120) * pixelsPerDegree;
+				ctx.beginPath();
+				ctx.moveTo(x, 0);
+				ctx.lineTo(x, canvas.height);
+				ctx.stroke();
+
+				// Optional: Add labels for angleX
+				if (i !== 0) { // Skip labeling the origin
+					ctx.fillStyle = "#ffffff";
+					ctx.font = "10px Arial";
+					ctx.textAlign = "center";
+					ctx.fillText(`${i}°`, x, canvas.height / 2 + 12); // Slight offset below X-axis
+				}
+			}
+
+			// Draw horizontal grid lines (constant angleY)
+			for (let i = -120; i <= 120; i += gridSpacingDegrees) {
+				const y = (120 - i) * pixelsPerDegree;
+				ctx.beginPath();
+				ctx.moveTo(0, y);
+				ctx.lineTo(canvas.width, y);
+				ctx.stroke();
+
+				// Optional: Add labels for angleY
+				if (i !== 0) { // Skip labeling the origin
+					ctx.fillStyle = "#ffffff";
+					ctx.font = "10px Arial";
+					ctx.textAlign = "right";
+					ctx.fillText(`${i}°`, canvas.width / 2 - 5, y + 3); // Slight offset left of Y-axis
+				}
+			}
+
+			// Draw axes
+			ctx.strokeStyle = "#ffffff";
+			ctx.lineWidth = 1;
+
+			// X-Axis
+			ctx.beginPath();
+			ctx.moveTo(0, canvas.height / 2);
+			ctx.lineTo(canvas.width, canvas.height / 2);
+			ctx.stroke();
+
+			// Y-Axis
+			ctx.beginPath();
+			ctx.moveTo(canvas.width / 2, 0);
+			ctx.lineTo(canvas.width / 2, canvas.height);
+			ctx.stroke();
+		}
+
+		function plotPoint(angleX_deg, angleY_deg) {
+			resetGraph();
+			const canvas = document.getElementById("marker-graph");
+			const ctx = canvas.getContext("2d");
+
+			// Coordinates mapping
+			// X: -120 to +120 mapped to 0 to canvas.width
+			// Y: +120 to -120 mapped to 0 to canvas.height (invert Y-axis)
+
+			const totalDegrees = 240; // -120 to +120
+			const pixelsPerDegree = canvas.width / totalDegrees; // 200 / 240 ≈ 0.83 pixels per degree
+
+			const x = (angleX_deg + 120) * pixelsPerDegree;
+			const y = (120 - angleY_deg) * pixelsPerDegree;
+
+			// Draw the point
+			ctx.fillStyle = "red";
+			ctx.beginPath();
+			ctx.arc(x, y, 5, 0, 2 * Math.PI);
+			ctx.fill();
+		}
+
+		// Function to update Attitude HUD
+		function updateAttitude(data) {
+			const [yaw, pitch, roll] = data.values.map(val => parseFloat(val).toFixed(3));
+			document.getElementById("yaw").textContent = yaw;
+			document.getElementById("pitch").textContent = pitch;
+			document.getElementById("roll").textContent = roll;
+		}
+
+		// Function to update Marker HUD
+		function updateMarker(data) {
+			document.getElementById("marker-id").textContent = data.markerId;
+			document.getElementById("angle-x").textContent = parseFloat(data.angle_x).toFixed(3);
+			document.getElementById("angle-y").textContent = parseFloat(data.angle_y).toFixed(3);
+			document.getElementById("distance").textContent = parseFloat(data.distance).toFixed(3);
+
+			// Convert angles from radians to degrees
+			const angleX_deg = radiansToDegrees(parseFloat(data.angle_x));
+			const angleY_deg = radiansToDegrees(parseFloat(data.angle_y));
+
+			// Clamp angles to -120 to +120 degrees based on FoV
+			const clampedAngleX = Math.max(-120, Math.min(120, angleX_deg));
+			const clampedAngleY = Math.max(-120, Math.min(120, angleY_deg));
+
+			plotPoint(clampedAngleX, clampedAngleY);
+		}
+
+		function simulateDataStream() {
+			setInterval(() => {
+				// Simulate updating Attitude
+				updateAttitude({
+					"type": "attitude",
+					"values": [
+						(Math.random() * 360 - 180).toFixed(3), // Yaw: -180 to +180
+						(Math.random() * 180 - 90).toFixed(3),  // Pitch: -90 to +90
+						(Math.random() * 360 - 180).toFixed(3)  // Roll: -180 to +180
+					],
+					"timestamp": Date.now()
+				});
+
+				// Simulate updating Marker
+				const simulatedMarkerData = {
+					"type": "marker",
+					"markerId": Math.floor(Math.random() * 10),
+					"angle_x": (Math.random() * 240 - 120) * (Math.PI / 180), // Convert degrees to radians
+					"angle_y": (Math.random() * 240 - 120) * (Math.PI / 180), // Convert degrees to radians
+					"distance": (Math.random() * 100).toFixed(3)
+				};
+				updateMarker(simulatedMarkerData);
+			}, 2000); // Update every 2 seconds
+		}
+
+		function resetGraph() {
+			initializeGraph();
+		}
+
+		function render(data) {
+			if (data.type === "marker") {
+				updateMarker(data)
+			}
+			if (data.type === "attitude") {
+				updateAttitude(data)
+			}
+		}
+
 		// Utility function to check if message is a valid JSON and matches expected structure
 		const isValidJsonAndStructure = (message) => {
 			try {
 				const parsedMessage = JSON.parse(message);
-
-				// if (
-				// 	parsedMessage &&
-				// 	["markerId", "angle_x", "angle_y", "distance"].every(
-				// 		key => typeof parsedMessage[key] === "number"
-				// 	)
-				// ) {
-				// }
-
 				return parsedMessage;
 
 			} catch (error) {
@@ -611,7 +835,9 @@
 
 			if (data) {
 				console.log('Valid JSON with expected structure:', data);
-				statusDiv.textContent = `Marker ID: ${data.markerId}, Angle X: ${data.angle_x}, Angle Y: ${data.angle_y}, Distance: ${data.distance}`;
+				statusDiv.textContent = message;
+
+				render(data);
 			} else {
 				// Just display the raw message
 				console.log('Displaying message as-is:', message);
@@ -623,6 +849,9 @@
 
 		signalingSocket.onopen = () => {
 			logStatus("Connected to signaling server.");
+			resetGraph();
+			// this is only for testing, disable this 
+			// simulateDataStream();
 
 			fetch(`http://${window.location.hostname}:8080/ice`)
 				.then(response => {
