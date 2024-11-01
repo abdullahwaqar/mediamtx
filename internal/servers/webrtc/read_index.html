@@ -745,7 +745,6 @@
 			ctx.stroke();
 		}
 
-
 		// Function to plot a single point on the graph
 		function plotPoint(angleX_deg, angleY_deg) {
 			const canvas = document.getElementById('marker-graph');
@@ -759,7 +758,8 @@
 			const pixelsPerDegree = canvas.width / totalDegrees; // 400 / 60 ≈ 6.666 pixels per degree
 
 			const x = (angleX_deg + 30) * pixelsPerDegree;
-			const y = (30 - angleY_deg) * pixelsPerDegree; // Inverted Y-axis
+			// const y = (30 - angleY_deg) * pixelsPerDegree; // Inverted Y-axis
+			const y = (angleY_deg + 30) * pixelsPerDegree; // Corrected inversion
 
 			// Draw the point
 			ctx.fillStyle = 'red';
@@ -882,7 +882,7 @@
 				resetGraph();
 
 				// For testing purposes; disable in production
-				simulateDataStream();
+				// simulateDataStream();
 
 				fetch(`http://${window.location.hostname}:8080/ice`)
 					.then(response => {
