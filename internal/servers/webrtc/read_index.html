@@ -93,15 +93,27 @@
 
 		/* Marker Graph HUD Box */
 		#marker-graph-hud {
-			width: 230px;
+			width: 440px;
 		}
 
 		#marker-graph {
-			width: 200px;
-			height: 200px;
+			width: 400px;
+			height: 400px;
 			background-color: #2e2e2e;
 			border: 1px solid #555;
 			border-radius: 4px;
+		}
+
+		/* Responsive Canvas */
+		@media (max-width: 800px) {
+			#marker-graph-hud {
+				width: 320px;
+			}
+
+			#marker-graph {
+				width: 300px;
+				height: 300px;
+			}
 		}
 	</style>
 </head>
@@ -134,9 +146,10 @@
 		<!-- Marker Graph HUD Box -->
 		<div class="hud-box" id="marker-graph-hud">
 			<h3>Marker Graph</h3>
-			<canvas id="marker-graph" width="200" height="200"></canvas>
+			<canvas id="marker-graph" width="400" height="400"></canvas>
 		</div>
 	</div>
+
 
 	<script>
 
@@ -661,28 +674,29 @@
 			return radians * (180 / Math.PI);
 		}
 
+		// Function to initialize and draw the graph axes and grid
 		function initializeGraph() {
-			const canvas = document.getElementById("marker-graph");
-			const ctx = canvas.getContext("2d");
+			const canvas = document.getElementById('marker-graph');
+			const ctx = canvas.getContext('2d');
 
 			// Clear the canvas
 			ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 			// Draw background
-			ctx.fillStyle = "#2e2e2e";
+			ctx.fillStyle = '#2e2e2e';
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 			// Draw grid lines
-			ctx.strokeStyle = "#555555";
+			ctx.strokeStyle = '#555555';
 			ctx.lineWidth = 1;
 
-			const gridSpacingDegrees = 30; // Degrees between grid lines
-			const totalDegrees = 240; // -120 to +120
-			const pixelsPerDegree = canvas.width / totalDegrees; // 200 / 240 ≈ 0.83 pixels per degree
+			const gridSpacingDegrees = 10; // Degrees between grid lines for better granularity
+			const totalDegrees = 60; // -30 to +30
+			const pixelsPerDegree = canvas.width / totalDegrees; // 400 / 60 ≈ 6.666 pixels per degree
 
 			// Draw vertical grid lines (constant angleX)
-			for (let i = -120; i <= 120; i += gridSpacingDegrees) {
-				const x = (i + 120) * pixelsPerDegree;
+			for (let i = -30; i <= 30; i += gridSpacingDegrees) {
+				const x = (i + 30) * pixelsPerDegree;
 				ctx.beginPath();
 				ctx.moveTo(x, 0);
 				ctx.lineTo(x, canvas.height);
@@ -690,32 +704,32 @@
 
 				// Optional: Add labels for angleX
 				if (i !== 0) { // Skip labeling the origin
-					ctx.fillStyle = "#ffffff";
-					ctx.font = "10px Arial";
-					ctx.textAlign = "center";
-					ctx.fillText(`${i}°`, x, canvas.height / 2 + 12); // Slight offset below X-axis
+					ctx.fillStyle = '#ffffff';
+					ctx.font = '14px Arial';
+					ctx.textAlign = 'center';
+					ctx.fillText(`${i}°`, x, canvas.height / 2 + 20); // Slight offset below X-axis
 				}
 			}
 
 			// Draw horizontal grid lines (constant angleY)
-			for (let i = -120; i <= 120; i += gridSpacingDegrees) {
-				const y = (120 - i) * pixelsPerDegree;
+			for (let i = -30; i <= 30; i += gridSpacingDegrees) {
+				const y = (30 - i) * pixelsPerDegree; // Inverted Y-axis
 				ctx.beginPath();
 				ctx.moveTo(0, y);
 				ctx.lineTo(canvas.width, y);
 				ctx.stroke();
 
-				// Optional: Add labels for angleY
-				if (i !== 0) { // Skip labeling the origin
-					ctx.fillStyle = "#ffffff";
-					ctx.font = "10px Arial";
-					ctx.textAlign = "right";
-					ctx.fillText(`${i}°`, canvas.width / 2 - 5, y + 3); // Slight offset left of Y-axis
+				if (i !== 0) {
+					// Skip labeling the origin
+					ctx.fillStyle = '#ffffff';
+					ctx.font = '14px Arial';
+					ctx.textAlign = 'right';
+					ctx.fillText(`${i}°`, canvas.width / 2 - 10, y + 5); // Slight offset left of Y-axis
 				}
 			}
 
 			// Draw axes
-			ctx.strokeStyle = "#ffffff";
+			ctx.strokeStyle = '#ffffff';
 			ctx.lineWidth = 1;
 
 			// X-Axis
@@ -731,25 +745,26 @@
 			ctx.stroke();
 		}
 
+		// Function to plot a single point on the graph
 		function plotPoint(angleX_deg, angleY_deg) {
-			resetGraph();
-			const canvas = document.getElementById("marker-graph");
-			const ctx = canvas.getContext("2d");
+			const canvas = document.getElementById('marker-graph');
+			const ctx = canvas.getContext('2d');
 
 			// Coordinates mapping
-			// X: -120 to +120 mapped to 0 to canvas.width
-			// Y: +120 to -120 mapped to 0 to canvas.height (invert Y-axis)
+			// X: -30 to +30 mapped to 0 to canvas.width
+			// Y: +30 to -30 mapped to 0 to canvas.height (Inverted Y-axis)
 
-			const totalDegrees = 240; // -120 to +120
-			const pixelsPerDegree = canvas.width / totalDegrees; // 200 / 240 ≈ 0.83 pixels per degree
+			const totalDegrees = 60; // -30 to +30
+			const pixelsPerDegree = canvas.width / totalDegrees; // 400 / 60 ≈ 6.666 pixels per degree
 
-			const x = (angleX_deg + 120) * pixelsPerDegree;
-			const y = (120 - angleY_deg) * pixelsPerDegree;
+			const x = (angleX_deg + 30) * pixelsPerDegree;
+			// const y = (30 - angleY_deg) * pixelsPerDegree; // Inverted Y-axis
+			const y = (angleY_deg + 30) * pixelsPerDegree; // Corrected inversion
 
 			// Draw the point
-			ctx.fillStyle = "red";
+			ctx.fillStyle = 'red';
 			ctx.beginPath();
-			ctx.arc(x, y, 5, 0, 2 * Math.PI);
+			ctx.arc(x, y, 8, 0, 2 * Math.PI); // Increased radius for better visibility
 			ctx.fill();
 		}
 
@@ -763,22 +778,25 @@
 
 		// Function to update Marker HUD
 		function updateMarker(data) {
+			// Convert angles from radians to degrees
+			let angleX_deg = radiansToDegrees(parseFloat(data.angle_x));
+			let angleY_deg = radiansToDegrees(parseFloat(data.angle_y));
+
+			// Clamp angles to -30 to +30 degrees based on FoV
+			const clampedAngleX = Math.max(-30, Math.min(30, angleX_deg));
+			const clampedAngleY = Math.max(-30, Math.min(30, angleY_deg));
+
 			document.getElementById("marker-id").textContent = data.markerId;
-			document.getElementById("angle-x").textContent = parseFloat(data.angle_x).toFixed(3);
-			document.getElementById("angle-y").textContent = parseFloat(data.angle_y).toFixed(3);
+			document.getElementById("angle-x").textContent = clampedAngleX.toFixed(3);
+			document.getElementById("angle-y").textContent = clampedAngleY.toFixed(3);
 			document.getElementById("distance").textContent = parseFloat(data.distance).toFixed(3);
 
-			// Convert angles from radians to degrees
-			const angleX_deg = radiansToDegrees(parseFloat(data.angle_x));
-			const angleY_deg = radiansToDegrees(parseFloat(data.angle_y));
-
-			// Clamp angles to -120 to +120 degrees based on FoV
-			const clampedAngleX = Math.max(-120, Math.min(120, angleX_deg));
-			const clampedAngleY = Math.max(-120, Math.min(120, angleY_deg));
+			resetGraph();
 
 			plotPoint(clampedAngleX, clampedAngleY);
 		}
 
+		// Function to simulate receiving JSON data periodically
 		function simulateDataStream() {
 			setInterval(() => {
 				// Simulate updating Attitude
@@ -796,8 +814,8 @@
 				const simulatedMarkerData = {
 					"type": "marker",
 					"markerId": Math.floor(Math.random() * 10),
-					"angle_x": (Math.random() * 240 - 120) * (Math.PI / 180), // Convert degrees to radians
-					"angle_y": (Math.random() * 240 - 120) * (Math.PI / 180), // Convert degrees to radians
+					"angle_x": (Math.random() * 60 - 30) * (Math.PI / 180), // Convert degrees to radians (-30° to +30°)
+					"angle_y": (Math.random() * 60 - 30) * (Math.PI / 180), // Convert degrees to radians (-30° to +30°)
 					"distance": (Math.random() * 100).toFixed(3)
 				};
 				updateMarker(simulatedMarkerData);
@@ -845,55 +863,83 @@
 			}
 		};
 
-		const signalingSocket = new WebSocket(SIGNALING_SERVER_URL);
+		let signalingSocket;
+		let reconnectAttempts = 0;
+		const maxReconnectAttempts = Infinity; // Set to Infinity for unlimited attempts
 
-		signalingSocket.onopen = () => {
-			logStatus("Connected to signaling server.");
-			resetGraph();
-			// this is only for testing, disable this 
-			// simulateDataStream();
+		// 2 seconds between reconnection attempts
+		const reconnectInterval = 2000;
 
-			fetch(`http://${window.location.hostname}:8080/ice`)
-				.then(response => {
-					return response.json();
-				}).then(data => {
-					createPeerConnection(data);
+		// Function to initialize the WebSocket connection
+		function connectWebSocket() {
+			signalingSocket = new WebSocket(SIGNALING_SERVER_URL);
 
-					createDataChannel();
-					createAndSendOffer();
-				})
-				.catch(error => {
-					console.error('Error fetching ICE servers:', error);
-				});
+			signalingSocket.onopen = () => {
+				console.log("Connected to signaling server.");
+				logStatus("Connected to signaling server.");
+				// Reset reconnection attempts on successful connection
+				reconnectAttempts = 0;
+				resetGraph();
 
-		};
+				// For testing purposes; disable in production
+				// simulateDataStream();
 
-		signalingSocket.onerror = (error) => {
-			logStatus("WebSocket error.");
-			console.error("WebSocket error:", error);
-		};
+				fetch(`http://${window.location.hostname}:8080/ice`)
+					.then(response => {
+						return response.json();
+					}).then(data => {
+						createPeerConnection(data);
 
-		signalingSocket.onclose = (event) => {
-			logStatus("WebSocket connection closed.");
-			console.log("WebSocket connection closed:", event.reason);
-		};
+						createDataChannel();
+						createAndSendOffer();
+					})
+					.catch(error => {
+						console.error('Error fetching ICE servers:', error);
+					});
+			};
 
-		signalingSocket.onmessage = async (event) => {
-			try {
-				const msg = JSON.parse(event.data);
-				console.log("Received message from server:", msg);
+			signalingSocket.onerror = (error) => {
+				console.error("Socket error:", error);
+				logStatus("Socket error. Attempting to reconnect...");
+				// Close the socket to trigger the onclose event
+				signalingSocket.close();
+			};
 
-				if (msg.sdp) {
-					await handleRemoteSDP(msg.sdp);
+			signalingSocket.onclose = (event) => {
+				console.log("Socket closed:", event.reason);
+				logStatus("Socket closed. Attempting to reconnect...");
+				if (reconnectAttempts < maxReconnectAttempts) {
+					setTimeout(() => {
+						reconnectAttempts++;
+						console.log(`Reconnection attempt ${reconnectAttempts}...`);
+						logStatus(`Reconnection attempt ${reconnectAttempts}...`);
+						connectWebSocket();
+					}, reconnectInterval);
+				} else {
+					console.warn("Max reconnection attempts reached.");
+					logStatus("Unable to reconnect to signaling server.");
 				}
+			};
 
-				if (msg.candidate) {
-					await handleRemoteCandidate(msg.candidate);
+			signalingSocket.onmessage = async (event) => {
+				try {
+					const msg = JSON.parse(event.data);
+					console.log("Received message from server:", msg);
+
+					if (msg.sdp) {
+						await handleRemoteSDP(msg.sdp);
+					}
+
+					if (msg.candidate) {
+						await handleRemoteCandidate(msg.candidate);
+					}
+				} catch (err) {
+					console.error("Error parsing signaling message:", err);
 				}
-			} catch (err) {
-				console.error("Error parsing signaling message:", err);
-			}
-		};
+			};
+		}
+
+		connectWebSocket();
 
 		// Create RTCPeerConnection
 		const createPeerConnection = (iceServers) => {
