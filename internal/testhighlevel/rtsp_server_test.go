@@ -1,5 +1,4 @@
 //go:build enable_highlevel_tests
-// +build enable_highlevel_tests
 
 package testhighlevel
 
@@ -67,10 +66,10 @@ func TestRTSPServerPublishRead(t *testing.T) {
 					"hls: no\n" +
 					"webrtc: no\n" +
 					"readTimeout: 20s\n" +
-					"protocols: [tcp]\n" +
-					"encryption: \"yes\"\n" +
-					"serverCert: " + serverCertFpath + "\n" +
-					"serverKey: " + serverKeyFpath + "\n" +
+					"rtspTransports: [tcp]\n" +
+					"rtspEncryption: \"yes\"\n" +
+					"rtspServerCert: " + serverCertFpath + "\n" +
+					"rtspServerKey: " + serverKeyFpath + "\n" +
 					"paths:\n" +
 					"  all_others:\n")
 				require.Equal(t, true, ok)

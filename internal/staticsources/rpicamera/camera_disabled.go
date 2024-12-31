@@ -1,5 +1,4 @@
 //go:build !linux || (!arm && !arm64)
-// +build !linux !arm,!arm64
 
 package rpicamera
 
@@ -21,4 +20,8 @@ func (c *camera) close() {
 }
 
 func (c *camera) reloadParams(_ params) {
+}
+
+func (c *camera) wait() error {
+	return nil
 }

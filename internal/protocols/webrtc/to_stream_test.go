@@ -72,10 +72,13 @@ var toFromStreamCases = []struct {
 	},
 	{
 		"h265",
-		nil,
+		&format.H265{
+			PayloadTyp: 96,
+		},
 		webrtc.RTPCodecCapability{
-			MimeType:  "video/H265",
-			ClockRate: 90000,
+			MimeType:    "video/H265",
+			ClockRate:   90000,
+			SDPFmtpLine: "level-id=93;profile-id=1;tier-flag=0;tx-mode=SRST",
 		},
 		&format.H265{
 			PayloadTyp: 96,
@@ -375,16 +378,16 @@ func TestToStream(t *testing.T) {
 						err2 := pc2.AddRemoteCandidate(cnd)
 						require.NoError(t, err2)
 
-					case <-pc1.Connected():
+					case <-pc1.Ready():
 						return
 					}
 				}
 			}()
 
-			err = pc1.WaitUntilConnected(context.Background())
+			err = pc1.WaitUntilReady(context.Background())
 			require.NoError(t, err)
 
-			err = pc2.WaitUntilConnected(context.Background())
+			err = pc2.WaitUntilReady(context.Background())
 			require.NoError(t, err)
 
 			err = pc1.OutgoingTracks[0].WriteRTP(&rtp.Packet{
