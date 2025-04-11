@@ -46,7 +46,8 @@
 
     <script>
         // Configuration
-        const SIGNALING_SERVER_URL = "ws://localhost:8080/gps-ws";
+
+        const SIGNALING_SERVER_URL = `ws://${window.location.hostname}:8080/gps-ws`;
 
         // DOM Elements
         const statusDiv = document.getElementById("status");
@@ -116,13 +117,19 @@
         const createPeerConnection = () => {
             gpsPc = new RTCPeerConnection({
                 iceServers: [
-                    { urls: "stun:stun.l.google.com:19302" }
-                ]
+                    { urls: `stun:${window.location.hostname}:7009` }
+                ],
+                iceTransportPolicy: "all"
             });
 
             // Handle ICE candidates
             gpsPc.onicecandidate = (event) => {
                 if (event.candidate) {
+                    console.log("Generated ICE Candidate:", event.candidate.candidate);
+                    if (event.candidate.type === "srflx") {
+                        logStatus("STUN server contacted successfully!");
+                    }
+
                     const message = {
                         candidate: JSON.stringify(event.candidate)
                     };
@@ -200,7 +207,11 @@
         // Create and send SDP offer
         const createAndSendOffer = async () => {
             try {
-                const offer = await gpsPc.createOffer();
+                const offer = await gpsPc.createOffer({
+                    iceRestart: true,
+                    offerToReceiveAudio: false,
+                    offerToReceiveVideo: false
+                });
                 await gpsPc.setLocalDescription(offer);
                 logStatus("SDP offer created and set as local description.");
 

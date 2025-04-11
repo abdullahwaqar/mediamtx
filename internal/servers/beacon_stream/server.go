@@ -12,6 +12,7 @@ import (
 
 	"github.com/bluenviron/mediamtx/internal/conf"
 	"github.com/gorilla/websocket"
+	"github.com/pion/stun"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -94,6 +95,66 @@ type Client struct {
 	rawDataLog bool
 }
 
+// StartLocalStunServer runs a minimal STUN server on the given port.
+// The STUN server will respond with host-based XOR-MAPPED-ADDRESS.
+func StartLocalStunServer(port string) {
+	go func() {
+		addr, err := net.ResolveUDPAddr("udp", port)
+		if err != nil {
+			log.Printf("Failed to resolve STUN listen addr: %v", err)
+			return
+		}
+		conn, err := net.ListenUDP("udp", addr)
+		if err != nil {
+			log.Printf("Failed to listen on STUN UDP addr: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		buf := make([]byte, 1500)
+		log.Printf("Local STUN server listening on %s%s", addr, port)
+
+		for {
+			n, rAddr, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				log.Println("STUN read error:", err)
+				continue
+			}
+
+			var msg stun.Message
+			msg.Raw = buf[:n]
+
+			if err := msg.Decode(); err != nil {
+				log.Println("Failed to decode STUN message:", err)
+				continue
+			}
+
+			if msg.Type.Method == stun.MethodBinding && msg.Type.Class == stun.ClassRequest {
+				resp, err := stun.Build(
+					stun.TransactionID,
+					stun.NewType(stun.MethodBinding, stun.ClassSuccessResponse),
+					stun.XORMappedAddress{
+						IP:   rAddr.IP,
+						Port: rAddr.Port,
+					},
+				)
+				if err != nil {
+					log.Println("failed to build STUN response:", err)
+					continue
+				}
+
+				copy(resp.TransactionID[:], msg.TransactionID[:])
+
+				if _, err := conn.WriteToUDP(resp.Raw, rAddr); err != nil {
+					log.Println("failed to send STUN response:", err)
+				}
+			} else {
+				log.Println("Ignoring non-Binding Request message")
+			}
+		}
+	}()
+}
+
 func parseICEServers(config conf.WebRTCICEServers) []webrtc.ICEServer {
 	// * Note: The ClientOnly field is not directly used in webrtc.ICEServer
 	var iceServers []webrtc.ICEServer
@@ -167,10 +228,41 @@ func HandleBeaconStreamWebSocket(w http.ResponseWriter, r *http.Request, conf *c
 	handleSignaling(client)
 }
 
+// Get the local IP address
+func getLocalIP() string {
+	{
+		addrs, err := net.InterfaceAddrs()
+		if err != nil {
+			return "127.0.0.1"
+		}
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+		return "127.0.0.1"
+	}
+}
+
 func handleSignaling(client *Client) {
-	api := webrtc.NewAPI()
+	settingEngine := webrtc.SettingEngine{}
+
+	settingEngine.SetNetworkTypes([]webrtc.NetworkType{
+		webrtc.NetworkTypeUDP4,
+		webrtc.NetworkTypeTCP4,
+		webrtc.NetworkTypeUDP6,
+		webrtc.NetworkTypeTCP6,
+	})
+
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
+
+	localIP := getLocalIP()
+	stunServerURL := fmt.Sprintf("stun:%s:7009", localIP)
+
 	config := webrtc.Configuration{
-		ICEServers: parseICEServers(*client.ICEServers),
+		ICEServers: []webrtc.ICEServer{
+			{URLs: []string{stunServerURL}},
+		},
 	}
 
 	peerConnection, err := api.NewPeerConnection(config)
@@ -178,19 +270,40 @@ func handleSignaling(client *Client) {
 		log.Printf("Failed to create PeerConnection: %v", err)
 		return
 	}
+	defer peerConnection.Close()
 
-	dataChannel, err := peerConnection.CreateDataChannel("data", nil)
+	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
+		log.Printf("OnICECandidate triggered. Candidate: %+v", c)
+		if c == nil {
+			log.Printf("OnICECandidate: Gathering complete (nil candidate).")
+			return
+		}
+		log.Printf("Server generated candidate: %s", c.String())
+
+		candidateJSON, err := json.Marshal(c.ToJSON())
+		if err != nil {
+			log.Printf("[ERROR] Failed to marshal ICE candidate: %v", err)
+			return
+		}
+		message := Message{Candidate: string(candidateJSON)}
+		log.Printf("[DEBUG] Attempting to send candidate message via WebSocket...")
+		sendMessage(client, message)
+		log.Printf("[DEBUG] Candidate message send attempt finished.")
+	})
+
+	dataChannel, err := peerConnection.CreateDataChannel("gpsData", nil)
 	if err != nil {
 		log.Printf("Failed to create DataChannel: %v", err)
 		return
 	}
 
+	// * Register DataChannel handlers
 	dataChannel.OnOpen(func() {
-		log.Printf("DataChannel opened for client")
+		log.Printf("DataChannel opened for client: %s", dataChannel.Label())
 		addDataChannel(dataChannel)
 
-		// * Start the broadcaster only once
 		once.Do(func() {
+			log.Printf("Starting data broadcast source (Protocol: %s)", client.conf.Protocol)
 			switch client.conf.Protocol {
 			case "ws":
 				go broadcastGPSDataByWebsocket(fmt.Sprintf("%s://%s:%d", client.conf.Protocol, client.conf.IPAddress, client.conf.Port))
@@ -199,33 +312,33 @@ func handleSignaling(client *Client) {
 			case "udp":
 				go broadcastGPSDataByUDP(fmt.Sprintf("%s:%d", client.conf.IPAddress, client.conf.Port), client.rawDataLog)
 			default:
-				log.Printf("No data source found")
+				log.Printf("No data source configured or invalid protocol: %s", client.conf.Protocol)
 			}
 		})
 	})
 
 	dataChannel.OnClose(func() {
-		log.Printf("DataChannel closed for client")
+		log.Printf("DataChannel closed for client: %s", dataChannel.Label())
 		removeDataChannel(dataChannel)
 	})
 
-	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c == nil {
-			return
-		}
-		candidateJSON, err := json.Marshal(c.ToJSON())
-		if err != nil {
-			log.Printf("Failed to marshal ICE candidate: %v", err)
-			return
-		}
-		message := Message{Candidate: string(candidateJSON)}
-		sendMessage(client, message)
+	peerConnection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		log.Printf("PeerConnection State has changed: %s", state.String())
+		// * Uncomment below for any additional cleanup, maybe useful for future
+		// if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed || state == webrtc.PeerConnectionStateDisconnected {
+		// }
 	})
 
 	for {
 		_, msgBytes, err := client.conn.ReadMessage()
 		if err != nil {
 			log.Printf("WebSocket read error: %v", err)
+
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("Unexpected WebSocket close error: %v", err)
+			} else {
+				log.Printf("WebSocket closed cleanly or as expected: %v", err)
+			}
 			return
 		}
 
@@ -235,55 +348,57 @@ func handleSignaling(client *Client) {
 			continue
 		}
 
+		// * Handle SDP Offer from Client
 		if msg.SDP != "" {
 			var sdp webrtc.SessionDescription
 			if err := json.Unmarshal([]byte(msg.SDP), &sdp); err != nil {
-				log.Printf("Failed to unmarshal SDP: %v", err)
+				log.Printf("Failed to unmarshal SDP Offer: %v", err)
 				continue
 			}
 
+			log.Printf("Received SDP Offer from client")
 			if err := peerConnection.SetRemoteDescription(sdp); err != nil {
-				log.Printf("Failed to set remote description: %v", err)
+				log.Printf("Failed to set remote description (Offer): %v", err)
 				continue
 			}
 
-			if sdp.Type == webrtc.SDPTypeOffer {
-				answer, err := peerConnection.CreateAnswer(nil)
-				if err != nil {
-					log.Printf("Failed to create answer: %v", err)
-					continue
-				}
-
-				if err := peerConnection.SetLocalDescription(answer); err != nil {
-					log.Printf("Failed to set local description: %v", err)
-					continue
-				}
-
-				gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
-				<-gatherComplete
-
-				localDesc := peerConnection.LocalDescription()
-				localSDP, err := json.Marshal(localDesc)
-				if err != nil {
-					log.Printf("Failed to marshal local description: %v", err)
-					continue
-				}
-
-				response := Message{SDP: string(localSDP)}
-				sendMessage(client, response)
+			// * Create SDP Answer
+			answer, err := peerConnection.CreateAnswer(nil)
+			if err != nil {
+				log.Printf("Failed to create SDP Answer: %v", err)
+				continue
 			}
+
+			// * Sets the LocalDescription, and starts our UDP listeners
+			// ? Note: Pion gathers ICE candidates automatically after SetLocalDescription
+			if err := peerConnection.SetLocalDescription(answer); err != nil {
+				log.Printf("Failed to set local description (Answer): %v", err)
+				continue
+			}
+
+			// * Send the Answer back to the client
+			// * Candidates will be sent by the OnICECandidate callback
+			log.Printf("Sending SDP Answer to client")
+			answerJSON, err := json.Marshal(answer)
+			if err != nil {
+				log.Printf("Failed to marshal SDP Answer: %v", err)
+				continue
+			}
+			response := Message{SDP: string(answerJSON)}
+			sendMessage(client, response)
 		}
 
+		// * Handle ICE Candidate from Client
 		if msg.Candidate != "" {
 			var candidate webrtc.ICECandidateInit
 			if err := json.Unmarshal([]byte(msg.Candidate), &candidate); err != nil {
-				log.Printf("Failed to unmarshal ICE candidate: %v", err)
+				log.Printf("Failed to unmarshal remote ICE candidate: %v", err)
 				continue
 			}
 
+			log.Printf("Received ICE Candidate from client: %s", candidate.Candidate)
 			if err := peerConnection.AddICECandidate(candidate); err != nil {
-				log.Printf("Failed to add ICE candidate: %v", err)
-				continue
+				log.Printf("Failed to add received ICE candidate: %v", err)
 			}
 		}
 	}

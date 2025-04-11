@@ -639,6 +639,8 @@ func (p *Core) createResources(initial bool) error {
 				p.Log(logger.Info, "Raw data log: %v", p.conf.GpsConfig.RawDataLog)
 
 				go func() {
+					beacon_stream.StartLocalStunServer(":7009")
+
 					mux := http.NewServeMux()
 
 					mux.HandleFunc("/ice", func(w http.ResponseWriter, r *http.Request) {
