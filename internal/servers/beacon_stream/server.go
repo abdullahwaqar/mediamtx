@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -181,15 +182,15 @@ func parseICEServers(config conf.WebRTCICEServers) []webrtc.ICEServer {
 
 func ICEHandler(w http.ResponseWriter, r *http.Request, ICEServers *conf.WebRTCICEServers) {
 	w.Header().Set("Content-Type", "application/json")
-	mappedServers := make([]map[string]interface{}, len(*ICEServers))
 
-	for i, server := range *ICEServers {
+	candidateIPs := getAllLocalIPs()
+	mappedServers := make([]map[string]interface{}, len(candidateIPs))
+
+	for i, ip := range candidateIPs {
+		stunServerURL := fmt.Sprintf("stun:%s:7009", ip)
 		mapped := map[string]interface{}{
-			"urls": server.URL,
+			"urls": stunServerURL,
 		}
-
-		mapped["username"] = server.Username
-		mapped["credential"] = server.Password
 		mappedServers[i] = mapped
 	}
 
@@ -228,20 +229,61 @@ func HandleBeaconStreamWebSocket(w http.ResponseWriter, r *http.Request, conf *c
 	handleSignaling(client)
 }
 
-// Get the local IP address
-func getLocalIP() string {
-	{
-		addrs, err := net.InterfaceAddrs()
+func getAllLocalIPs() []string {
+	var allIPs []string
+	seenIPs := make(map[string]bool)
+
+	// * Get ZeroTier assigned IP addresses (excluding loopback and IPv6)
+	getZeroTierIPs := func() []string {
+		var zeroTierIPs []string
+		interfaces, err := net.Interfaces()
 		if err != nil {
-			return "127.0.0.1"
+			fmt.Println("Error getting network interfaces:", err)
+			return zeroTierIPs
 		}
-		for _, addr := range addrs {
-			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
+
+		for _, iface := range interfaces {
+			if strings.HasPrefix(iface.Name, "zt") {
+				addrs, err := iface.Addrs()
+				if err != nil {
+					fmt.Printf("Error getting addresses for interface %s: %v\n", iface.Name, err)
+					continue
+				}
+				for _, addr := range addrs {
+					if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil && !seenIPs[ipnet.IP.String()] {
+						zeroTierIPs = append(zeroTierIPs, ipnet.IP.String())
+						seenIPs[ipnet.IP.String()] = true
+					}
+				}
 			}
 		}
-		return "127.0.0.1"
+		return zeroTierIPs
 	}
+
+	// * Get local IP addresses (excluding loopback and IPv6)
+	getLocalIPs := func() []string {
+		var localIPs []string
+		addrs, err := net.InterfaceAddrs()
+		if err != nil {
+			fmt.Println("Error getting network interface addresses:", err)
+			return localIPs
+		}
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil && !seenIPs[ipnet.IP.String()] {
+				localIPs = append(localIPs, ipnet.IP.String())
+				seenIPs[ipnet.IP.String()] = true
+			}
+		}
+		return localIPs
+	}
+
+	zeroTierIPs := getZeroTierIPs()
+	allIPs = append(allIPs, zeroTierIPs...)
+
+	localIPs := getLocalIPs()
+	allIPs = append(allIPs, localIPs...)
+
+	return allIPs
 }
 
 func handleSignaling(client *Client) {
@@ -256,13 +298,17 @@ func handleSignaling(client *Client) {
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
 
-	localIP := getLocalIP()
-	stunServerURL := fmt.Sprintf("stun:%s:7009", localIP)
+	candidateIPs := getAllLocalIPs()
+	fmt.Println("All local IPs found:", candidateIPs)
+
+	var iceServers []webrtc.ICEServer
+	for _, ip := range candidateIPs {
+		stunServerURL := fmt.Sprintf("stun:%s:7009", ip)
+		iceServers = append(iceServers, webrtc.ICEServer{URLs: []string{stunServerURL}})
+	}
 
 	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{stunServerURL}},
-		},
+		ICEServers: iceServers,
 	}
 
 	peerConnection, err := api.NewPeerConnection(config)

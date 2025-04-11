@@ -114,11 +114,12 @@
         };
 
         // Create RTCPeerConnection
-        const createPeerConnection = () => {
+        const createPeerConnection = async () => {
+            const iceCandidatesResponse = await fetch(`http://${window.location.hostname}:8080/ice`);
+            const iceCandidates = await iceCandidatesResponse.json();
+
             gpsPc = new RTCPeerConnection({
-                iceServers: [
-                    { urls: `stun:${window.location.hostname}:7009` }
-                ],
+                iceServers: iceCandidates,
                 iceTransportPolicy: "all"
             });
 
