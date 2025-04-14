@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 	"github.com/bluenviron/mediamtx/internal/pprof"
 	"github.com/bluenviron/mediamtx/internal/recordcleaner"
 	"github.com/bluenviron/mediamtx/internal/rlimit"
+	"github.com/bluenviron/mediamtx/internal/servers/beacon_stream"
 	"github.com/bluenviron/mediamtx/internal/servers/hls"
 	"github.com/bluenviron/mediamtx/internal/servers/rtmp"
 	"github.com/bluenviron/mediamtx/internal/servers/rtsp"
@@ -641,6 +643,52 @@ func (p *Core) createResources(initial bool) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// * Unified GPSConfig validation and server start
+	if p.conf.GpsConfig != nil {
+		// * Validate the gpsConfig details
+		if p.conf.GpsConfig.Protocol != "" && p.conf.GpsConfig.IPAddress != "" && p.conf.GpsConfig.Port != 0 {
+			// * Validate the protocol
+			validProtocols := map[string]bool{"ws": true, "tcp": true, "udp": true}
+			if validProtocols[p.conf.GpsConfig.Protocol] {
+				p.Log(logger.Info, "GPS stream is enabled with protocol:%s", p.conf.GpsConfig.Protocol)
+				p.Log(logger.Info, "GPS stream is enabled with protocol:%s", p.conf.GpsConfig.Protocol)
+				p.Log(logger.Info, "Raw data log: %v", p.conf.GpsConfig.RawDataLog)
+
+				go func() {
+					beacon_stream.StartLocalStunServer(":7009")
+
+					mux := http.NewServeMux()
+
+					mux.HandleFunc("/ice", func(w http.ResponseWriter, r *http.Request) {
+						beacon_stream.ICEHandler(w, r, &p.conf.WebRTCICEServers2)
+					})
+
+					mux.HandleFunc("/gps-ws", func(w http.ResponseWriter, r *http.Request) {
+						beacon_stream.HandleBeaconStreamWebSocket(w, r, p.conf.GpsConfig, &p.conf.WebRTCICEServers2, p.conf.GpsConfig.RawDataLog)
+					})
+
+					handler := beacon_stream.EnableCORS(mux)
+
+					p.Log(logger.Info, "Starting beacon server on :8080")
+
+					// * Start the server with the handler
+					if err := http.ListenAndServe(":8080", handler); err != nil && err != http.ErrServerClosed {
+						p.Log(logger.Error, "Beacon server failed: %v", err)
+					}
+				}()
+			} else {
+				p.Log(logger.Info, "GPS stream protocol is invalid. Must be one of 'ws', 'tcp', or 'udp'. GPS stream is disabled.")
+				p.Log(logger.Info, "GPS stream is disabled due to invalid protocol.")
+			}
+		} else {
+			// * Incomplete configuration, disable the GPS stream
+			p.Log(logger.Info, "GPS stream is disabled due to incomplete configuration.")
+		}
+	} else {
+		// * gpsConfig is not set, so GPS stream is disabled
+		p.Log(logger.Info, "GPS stream is disabled because gpsConfig is not set.")
 	}
 
 	return nil

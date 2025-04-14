@@ -154,6 +154,13 @@ var defaultAuthInternalUsers = AuthInternalUsers{
 	},
 }
 
+type GPSConfig struct {
+	Protocol   string `json:"protocol"`  // ws, tcp, or udp
+	IPAddress  string `json:"ipAddress"` // IP address to connect to
+	Port       int    `json:"port"`      // Port number of the server
+	RawDataLog bool   `json:"rawDataLog"`
+}
+
 // Conf is a configuration.
 // WARNING: Avoid using slices directly due to https://github.com/golang/go/issues/21092
 type Conf struct {
@@ -305,6 +312,9 @@ type Conf struct {
 	// Paths
 	OptionalPaths map[string]*OptionalPath `json:"paths"`
 	Paths         map[string]*Path         `json:"-"` // filled by Check()
+
+	// For gps stream config
+	GpsConfig *GPSConfig `json:"gpsConfig"`
 }
 
 func (conf *Conf) setDefaults() {
@@ -415,6 +425,11 @@ func (conf *Conf) setDefaults() {
 	conf.SRTAddress = ":8890"
 
 	conf.PathDefaults.setDefaults()
+
+	// * Initialize GpsConfig
+	if conf.GpsConfig == nil {
+		conf.GpsConfig = &GPSConfig{}
+	}
 }
 
 // Load loads a Conf.
