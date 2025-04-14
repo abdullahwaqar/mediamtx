@@ -13,8 +13,8 @@ import (
 
 	"github.com/bluenviron/mediamtx/internal/conf"
 	"github.com/gorilla/websocket"
-	"github.com/pion/stun"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/stun/v3"
+	"github.com/pion/webrtc/v4"
 )
 
 // Message defines the structure for signaling messages
@@ -113,7 +113,7 @@ func StartLocalStunServer(port string) {
 		defer conn.Close()
 
 		buf := make([]byte, 1500)
-		log.Printf("Local STUN server listening on %s%s", addr, port)
+		log.Printf("Local STUN server listening on %s", addr)
 
 		for {
 			n, rAddr, err := conn.ReadFromUDP(buf)
