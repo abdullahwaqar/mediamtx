@@ -114,7 +114,21 @@
         height: 300px;
       }
     }
+
+    #network-stats {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 9999;
+      background: #2e2e2e;
+      color: #fff;
+      padding: 16px 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+      min-width: 220px;
+    }
   </style>
+  <script defer src="./analytic.js"></script>
   <script defer src="./reader.js"></script>
   <script defer src="./raw_datachannel_reader.js"></script>
 </head>
@@ -134,6 +148,17 @@
       <p>Yaw: <span id="yaw">0.000</span>°</p>
       <p>Pitch: <span id="pitch">0.000</span>°</p>
       <p>Roll: <span id="roll">0.000</span>°</p>
+    </div>
+
+    <!-- Add this to your HUD section -->
+    <div class="hud-box" id="network-stats">
+      <h3>Network Metrics</h3>
+      <p>Video Bitrate: <span id="video-bitrate">0.00</span> kbps</p>
+      <p>Jitter: <span id="jitter">0.00</span> ms</p>
+      <p>Packet Loss: <span id="packet-loss">0.00</span>%</p>
+      <p>RTT: <span id="rtt">0.00</span> ms</p>
+      <p>Available Bandwidth: <span id="bandwidth">0.00</span> kbps</p>
+      <p>Framerate: <span id="framerate">0</span> fps</p>
     </div>
 
     <!-- Marker HUD Box -->
@@ -200,7 +225,11 @@
           setMessage('');
           video.srcObject = evt.streams[0];
         },
+        onConnectionEstablished: (ref) => {
+          new ConnectionAnalytic(ref).start();
+        }
       });
+
     });
 
   </script>

@@ -36,7 +36,10 @@ var readIndex []byte
 var readerJS []byte
 
 //go:embed raw_datachannel_reader.js
-var rawDatachannelReader []byte
+var rawDatachannelReaderJS []byte
+
+//go:embed analytic.js
+var analyticJS []byte
 
 var (
 	reWHIPWHEPNoID   = regexp.MustCompile("^/(.+?)/(whip|whep)$")
@@ -354,7 +357,15 @@ func (s *httpServer) onRequest(ctx *gin.Context) {
 		ctx.Header("Cache-Control", "max-age=3600")
 		ctx.Header("Content-Type", "application/javascript")
 		ctx.Writer.WriteHeader(http.StatusOK)
-		ctx.Writer.Write(rawDatachannelReader)
+		ctx.Writer.Write(rawDatachannelReaderJS)
+		return
+	}
+
+	if strings.HasSuffix(ctx.Request.URL.Path, "/analytic.js") {
+		ctx.Header("Cache-Control", "max-age=3600")
+		ctx.Header("Content-Type", "application/javascript")
+		ctx.Writer.WriteHeader(http.StatusOK)
+		ctx.Writer.Write(analyticJS)
 		return
 	}
 

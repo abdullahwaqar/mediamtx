@@ -76,7 +76,8 @@ authInternalUsers:
     # if the IP is localhost.
   - user: any
     pass:
-    ips: ["127.0.0.1", "::1"]
+    #ips: ["127.0.0.1", "::1"]
+    ips: []
     permissions:
       - action: api
       - action: metrics
@@ -130,7 +131,7 @@ authJWTClaimKey: mediamtx_permissions
 # Global settings -> Control API
 
 # Enable controlling the server through the Control API.
-api: no
+api: yes
 # Address of the Control API listener.
 apiAddress: :9997
 # Enable TLS/HTTPS on the Control API server.
@@ -262,7 +263,7 @@ rtspAuthMethods: [basic]
 # Global settings -> RTMP server
 
 # Enable publishing and reading streams with the RTMP protocol.
-rtmp: yes
+rtmp: no
 # Address of the RTMP listener. This is needed only when encryption is "no" or "optional".
 rtmpAddress: :1935
 # Encrypt connections with TLS (RTMPS).
@@ -282,7 +283,7 @@ rtmpServerCert: server.crt
 # Global settings -> HLS server
 
 # Enable reading streams with the HLS protocol.
-hls: yes
+hls: no
 # Address of the HLS listener.
 hlsAddress: :8088
 # Enable TLS/HTTPS on the HLS server.
@@ -709,19 +710,31 @@ pathDefaults:
 # for example "~^(test1|test2)$" will match both "test1" and "test2",
 # for example "~^prefix" will match all paths that start with "prefix".
 paths:
-  # paths:
-  # example:
-  # my_camera:
-  #   source: rtsp://my_camera
+  # primary stream
+  cam:
+    source: rpiCamera
+    # Width of frames.
+    rpiCameraWidth: 1440
+    # Height of frames.
+    rpiCameraHeight: 1440
+    # FPS.
+    rpiCameraFPS: 10
 
-  #! Remove this path, just for dev, accessed builtin webcam
-  webcam:
-    runOnInit: ffmpeg -f v4l2 -i /dev/video0 -c:v libx264 -preset ultrafast -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
-    runOnInitRestart: yes
-
-  # Settings under path "all_others" are applied to all paths that
-  # do not match another entry.
-  all_others:
+  # secondary stream
+  low:
+    source: rpiCamera
+    # This is a secondary stream.
+    rpiCameraSecondary: true
+    # Width of frames.
+    rpiCameraWidth: 240
+    # Height of frames.
+    rpiCameraHeight: 240
+    # FPS.
+    rpiCameraFPS: 10
+    # Codec. in case of secondary streams, it defaults to M-JPEG.
+    rpiCameraCodec: auto
+    # JPEG quality.
+    rpiCameraJPEGQuality: 60
 
 ###############################################
 #  GPS config. This holds the protocol, ip address and port of the server that needs to connect to get the GPS data stream
@@ -734,6 +747,6 @@ gpsConfig:
   ipAddress: 127.0.0.1
 
   # Port number of the server
-  port: 13370
+  port: 14440
 
   rawDataLog: true
